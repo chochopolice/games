@@ -59,50 +59,92 @@ canvas {
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  padding: 8px 12px;
+  padding: 6px 16px 10px;
   flex: 1;
   max-height: 160px;
 }
 
-.btn-group {
-  display: flex;
-  gap: 6px;
-  align-items: center;
+/* ── D-pad (left) ── */
+#dpad {
+  display: grid;
+  grid-template-columns: repeat(3, 52px);
+  grid-template-rows: repeat(3, 52px);
+  gap: 2px;
 }
 
-.btn {
+.dpad-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255,255,255,0.13);
+  border: 2px solid rgba(255,255,255,0.22);
+  color: rgba(255,255,255,0.9);
+  font-size: 22px;
+  cursor: pointer;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  transition: background 0.07s;
+}
+.dpad-btn.pressed, .dpad-btn:active {
+  background: rgba(255,215,0,0.40);
+  border-color: #FFD700;
+}
+/* Cross shape: hide corners, round edges on arms */
+#dpad-up    { grid-column:2; grid-row:1; border-radius: 8px 8px 0 0; }
+#dpad-left  { grid-column:1; grid-row:2; border-radius: 8px 0 0 8px; }
+#dpad-center{ grid-column:2; grid-row:2; background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.10); pointer-events:none; }
+#dpad-right { grid-column:3; grid-row:2; border-radius: 0 8px 8px 0; }
+#dpad-down  { grid-column:2; grid-row:3; border-radius: 0 0 8px 8px; }
+
+/* ── Action buttons (right) ── */
+#actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.act-btn {
   border-radius: 50%;
   border: 3px solid rgba(255,255,255,0.25);
   background: rgba(255,255,255,0.12);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: rgba(255,255,255,0.85);
-  font-size: 22px;
+  color: rgba(255,255,255,0.9);
   font-family: 'Courier New', monospace;
   font-weight: bold;
   cursor: pointer;
   touch-action: none;
-  transition: background 0.08s;
   -webkit-tap-highlight-color: transparent;
   user-select: none;
+  transition: background 0.07s;
 }
-.btn:active, .btn.pressed {
-  background: rgba(255,215,0,0.35);
+.act-btn.pressed, .act-btn:active {
+  background: rgba(255,215,0,0.40);
   border-color: #FFD700;
 }
+#btnJ {
+  width: 76px; height: 76px; font-size: 30px;
+  background: rgba(255,70,0,0.28); border-color: rgba(255,140,0,0.55);
+}
+#btnJ.pressed { background: rgba(255,120,0,0.55); }
+#btnDash {
+  width: 54px; height: 54px; font-size: 12px;
+  background: rgba(100,100,255,0.22); border-color: rgba(150,150,255,0.45);
+  letter-spacing: -0.5px;
+}
+#btnDash.pressed { background: rgba(130,130,255,0.50); }
 
-.btn-dir  { width: 64px; height: 64px; font-size: 26px; }
-.btn-jump { width: 80px; height: 80px; font-size: 32px;
-            background: rgba(255,80,0,0.25); border-color: rgba(255,150,0,0.5); }
-.btn-jump.pressed { background: rgba(255,130,0,0.55); border-color: #FFD700; }
-
-/* Landscape mode */
+/* Landscape */
 @media (orientation: landscape) {
   #title { font-size: 12px; padding: 2px 0; }
-  #controls { max-height: 110px; padding: 4px 16px; }
-  .btn-dir  { width: 54px; height: 54px; }
-  .btn-jump { width: 68px; height: 68px; }
+  #controls { max-height: 120px; padding: 4px 20px 6px; }
+  #dpad { grid-template-columns: repeat(3, 44px); grid-template-rows: repeat(3, 44px); }
+  .dpad-btn { font-size: 18px; }
+  #btnJ    { width: 64px; height: 64px; font-size: 26px; }
+  #btnDash { width: 46px; height: 46px; font-size: 11px; }
 }
 </style>
 </head>
@@ -113,12 +155,18 @@ canvas {
     <canvas id="c"></canvas>
   </div>
   <div id="controls">
-    <div class="btn-group">
-      <div class="btn btn-dir" id="btnL">&#9664;</div>
-      <div class="btn btn-dir" id="btnR">&#9654;</div>
+    <!-- 左: 十字キー -->
+    <div id="dpad">
+      <div class="dpad-btn" id="dpad-up">&#9650;</div>
+      <div class="dpad-btn" id="dpad-left">&#9664;</div>
+      <div class="dpad-btn" id="dpad-center"></div>
+      <div class="dpad-btn" id="dpad-right">&#9654;</div>
+      <div class="dpad-btn" id="dpad-down">&#9660;</div>
     </div>
-    <div class="btn-group">
-      <div class="btn btn-jump" id="btnJ">&#9650;</div>
+    <!-- 右: ジャンプ + ダッシュ -->
+    <div id="actions">
+      <div class="act-btn" id="btnJ">&#9650;</div>
+      <div class="act-btn" id="btnDash">DASH</div>
     </div>
   </div>
 </div>
@@ -133,23 +181,27 @@ cv.width  = W;
 cv.height = H;
 
 // ─── Virtual button state ───
-var tL = false, tR = false, tJ = false;
+var tL = false, tR = false, tJ = false, tDash = false;
 
-function bindBtn(id, setL, setR, setJ) {
+function bindBtn(id, onFn, offFn) {
   var el = document.getElementById(id);
-  function on(e)  { e.preventDefault(); if(setL) tL=true; if(setR) tR=true; if(setJ) tJ=true; el.classList.add('pressed'); if(gs!=='play') doAction(); }
-  function off(e) { e.preventDefault(); if(setL) tL=false; if(setR) tR=false; if(setJ) tJ=false; el.classList.remove('pressed'); }
-  el.addEventListener('touchstart', on,  {passive:false});
-  el.addEventListener('touchend',   off, {passive:false});
-  el.addEventListener('touchcancel',off, {passive:false});
-  // Mouse fallback for desktop testing
-  el.addEventListener('mousedown', on);
-  el.addEventListener('mouseup',   off);
-  el.addEventListener('mouseleave',off);
+  if (!el) return;
+  function on(e)  { e.preventDefault(); onFn();  el.classList.add('pressed');    if(gs!=='play') doAction(); }
+  function off(e) { e.preventDefault(); offFn(); el.classList.remove('pressed'); }
+  el.addEventListener('touchstart',  on,  {passive:false});
+  el.addEventListener('touchend',    off, {passive:false});
+  el.addEventListener('touchcancel', off, {passive:false});
+  el.addEventListener('mousedown',   on);
+  el.addEventListener('mouseup',     off);
+  el.addEventListener('mouseleave',  off);
 }
-bindBtn('btnL', true,  false, false);
-bindBtn('btnR', false, true,  false);
-bindBtn('btnJ', false, false, true);
+
+bindBtn('dpad-left',  function(){ tL=true;  }, function(){ tL=false;  });
+bindBtn('dpad-right', function(){ tR=true;  }, function(){ tR=false;  });
+bindBtn('dpad-up',    function(){ tJ=true;  }, function(){ tJ=false;  });
+bindBtn('dpad-down',  function(){            }, function(){            });
+bindBtn('btnJ',       function(){ tJ=true;  }, function(){ tJ=false;  });
+bindBtn('btnDash',    function(){ tDash=true; }, function(){ tDash=false; });
 
 // ─── Keyboard (for desktop testing) ───
 var keys = {};
@@ -163,7 +215,7 @@ document.addEventListener('keyup', function(e) { keys[e.code] = false; });
 function isL()   { return !!(keys['ArrowLeft']  || keys['KeyA'] || tL); }
 function isR()   { return !!(keys['ArrowRight'] || keys['KeyD'] || tR); }
 function isJ()   { return !!(keys['Space'] || keys['ArrowUp'] || keys['KeyW'] || tJ); }
-function isRun() { return !!(keys['ShiftLeft'] || keys['ShiftRight']); }
+function isRun() { return !!(keys['ShiftLeft'] || keys['ShiftRight'] || tDash); }
 
 // ─── Audio ───
 var audioCtx = null;
