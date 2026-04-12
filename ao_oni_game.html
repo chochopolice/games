@@ -1,0 +1,411 @@
+
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #000; }
+#gameContainer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem 0;
+  min-height: 600px;
+  background: transparent;
+  font-family: var(--font-mono, monospace);
+}
+#canvas {
+  border: 2px solid #333;
+  display: block;
+  image-rendering: pixelated;
+}
+#ui {
+  color: #aaa;
+  font-size: 13px;
+  margin-top: 10px;
+  text-align: center;
+}
+#message {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  pointer-events: none;
+}
+#canvasWrap { position: relative; display: inline-block; }
+</style>
+<div id="gameContainer">
+  <div id="canvasWrap">
+    <canvas id="canvas" width="480" height="480"></canvas>
+    <div id="message"></div>
+  </div>
+  <div id="ui">
+    <span>移動: WASD / 矢印キー</span> &nbsp;|&nbsp;
+    <span id="itemCount">鍵: 0/3</span> &nbsp;|&nbsp;
+    <span id="status">洋館から脱出せよ！</span>
+  </div>
+</div>
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const msg = document.getElementById('message');
+const itemCountEl = document.getElementById('itemCount');
+const statusEl = document.getElementById('status');
+
+const TILE = 32;
+const COLS = 15;
+const ROWS = 15;
+
+// Map: 0=wall, 1=floor, 2=key, 3=door, 4=oni_spawn
+const mapData = [
+  [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+  [0,1,1,1,0,1,1,1,1,1,0,1,1,1,0],
+  [0,1,0,1,1,1,0,0,0,1,0,1,0,1,0],
+  [0,1,0,0,0,0,0,1,0,1,1,1,0,1,0],
+  [0,1,1,1,0,1,0,1,0,0,0,0,0,1,0],
+  [0,0,0,1,0,1,1,1,1,1,1,1,0,1,0],
+  [0,1,1,1,0,0,0,1,0,0,0,1,0,1,0],
+  [0,1,0,0,0,1,0,1,0,1,0,1,1,1,0],
+  [0,1,0,1,1,1,0,0,0,1,0,0,0,1,0],
+  [0,1,0,1,0,0,0,1,0,1,1,1,0,1,0],
+  [0,1,1,1,0,1,1,1,0,0,0,1,0,1,0],
+  [0,0,0,1,0,1,0,0,0,1,0,1,0,1,0],
+  [0,1,1,1,0,1,0,1,1,1,0,1,1,1,0],
+  [0,1,0,0,0,1,1,1,0,0,0,0,0,3,0],
+  [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+];
+
+const keyPositions = [{r:1,c:11},{r:6,c:1},{r:10,c:5}];
+const oniStart = {r:13,c:1};
+
+let state = 'playing';
+let keys = new Set();
+let player = { r: 1, c: 1, x: 1*TILE, y: 1*TILE, vel:{x:0,y:0} };
+let oni = { r: oniStart.r, c: oniStart.c, x: oniStart.c*TILE, y: oniStart.r*TILE, timer: 0, speed: 0.4 };
+let collectedKeys = 0;
+let keyItems = keyPositions.map(p => ({...p, collected: false}));
+let doorOpen = false;
+let moveTimer = 0;
+let oniMoveTimer = 0;
+let shakeTimer = 0;
+let fadeAlpha = 0;
+let gameResult = '';
+let flashTimer = 0;
+
+const COLORS = {
+  wall: '#1a1a2e',
+  wallEdge: '#0d0d1a',
+  floor: '#16213e',
+  player: '#e8c97e',
+  playerBody: '#c8a96e',
+  oni: '#4488ff',
+  oniDark: '#2244cc',
+  oniEye: '#ffffff',
+  key: '#ffd700',
+  door: '#8b6914',
+  doorOpen: '#3a5a2a',
+  ui: '#e0e0e0',
+};
+
+function isWall(r, c) {
+  if (r < 0 || r >= ROWS || c < 0 || c >= COLS) return true;
+  if (mapData[r][c] === 0) return true;
+  if (mapData[r][c] === 3 && !doorOpen) return true;
+  return false;
+}
+
+function bfsPath(fromR, fromC, toR, toC) {
+  const visited = Array.from({length: ROWS}, () => new Array(COLS).fill(false));
+  const parent = Array.from({length: ROWS}, () => new Array(COLS).fill(null));
+  const queue = [[fromR, fromC]];
+  visited[fromR][fromC] = true;
+  const dirs = [[0,1],[0,-1],[1,0],[-1,0]];
+  while (queue.length > 0) {
+    const [r, c] = queue.shift();
+    if (r === toR && c === toC) {
+      let path = [[r, c]];
+      let cur = [r, c];
+      while (parent[cur[0]][cur[1]]) {
+        cur = parent[cur[0]][cur[1]];
+        path.unshift(cur);
+      }
+      return path;
+    }
+    for (const [dr, dc] of dirs) {
+      const nr = r + dr, nc = c + dc;
+      if (!visited[nr] || visited[nr][nc]) continue;
+      if (isWall(nr, nc)) continue;
+      visited[nr][nc] = true;
+      parent[nr][nc] = [r, c];
+      queue.push([nr, nc]);
+    }
+  }
+  return [];
+}
+
+function drawTile(r, c) {
+  const x = c * TILE;
+  const y = r * TILE;
+  const tile = mapData[r][c];
+  if (tile === 0) {
+    ctx.fillStyle = COLORS.wallEdge;
+    ctx.fillRect(x, y, TILE, TILE);
+    ctx.fillStyle = COLORS.wall;
+    ctx.fillRect(x+1, y+1, TILE-2, TILE-2);
+  } else {
+    ctx.fillStyle = COLORS.floor;
+    ctx.fillRect(x, y, TILE, TILE);
+    ctx.fillStyle = 'rgba(255,255,255,0.02)';
+    if ((r+c)%2===0) ctx.fillRect(x, y, TILE, TILE);
+    if (tile === 3) {
+      ctx.fillStyle = doorOpen ? COLORS.doorOpen : COLORS.door;
+      ctx.fillRect(x+4, y+4, TILE-8, TILE-8);
+      if (!doorOpen) {
+        ctx.fillStyle = '#ffd700';
+        ctx.fillRect(x+TILE/2-3, y+TILE/2-3, 6, 6);
+      }
+    }
+  }
+}
+
+function drawPlayer() {
+  const x = player.x + TILE/2;
+  const y = player.y + TILE/2;
+  ctx.fillStyle = COLORS.playerBody;
+  ctx.fillRect(x-7, y-12, 14, 20);
+  ctx.fillStyle = COLORS.player;
+  ctx.beginPath();
+  ctx.arc(x, y-14, 8, 0, Math.PI*2);
+  ctx.fill();
+  ctx.fillStyle = '#222';
+  ctx.fillRect(x-4, y-15, 3, 3);
+  ctx.fillRect(x+1, y-15, 3, 3);
+  ctx.fillStyle = '#555';
+  ctx.fillRect(x-3, y-11, 6, 1);
+}
+
+function drawOni() {
+  const x = oni.x + TILE/2;
+  const y = oni.y + TILE/2;
+  const bob = Math.sin(Date.now()/200) * 2;
+  ctx.fillStyle = COLORS.oniDark;
+  ctx.beginPath();
+  ctx.ellipse(x, y+bob+2, 11, 14, 0, 0, Math.PI*2);
+  ctx.fill();
+  ctx.fillStyle = COLORS.oni;
+  ctx.beginPath();
+  ctx.ellipse(x, y+bob, 10, 12, 0, 0, Math.PI*2);
+  ctx.fill();
+  ctx.fillStyle = COLORS.oniEye;
+  ctx.fillRect(x-5, y+bob-5, 4, 4);
+  ctx.fillRect(x+1, y+bob-5, 4, 4);
+  ctx.fillStyle = 'rgba(0,0,0,0.8)';
+  ctx.fillRect(x-4, y+bob-4, 2, 2);
+  ctx.fillRect(x+2, y+bob-4, 2, 2);
+  ctx.fillStyle = COLORS.oni;
+  ctx.fillRect(x-3, y+bob+3, 6, 2);
+  // horns
+  ctx.fillStyle = '#2233aa';
+  ctx.beginPath(); ctx.moveTo(x-6, y+bob-9); ctx.lineTo(x-9, y+bob-17); ctx.lineTo(x-2, y+bob-10); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(x+6, y+bob-9); ctx.lineTo(x+9, y+bob-17); ctx.lineTo(x+2, y+bob-10); ctx.closePath(); ctx.fill();
+}
+
+function drawKeys() {
+  keyItems.forEach(k => {
+    if (k.collected) return;
+    const x = k.c * TILE + TILE/2;
+    const y = k.r * TILE + TILE/2;
+    const bob = Math.sin(Date.now()/400 + k.c) * 3;
+    ctx.fillStyle = COLORS.key;
+    ctx.beginPath();
+    ctx.arc(x, y+bob-4, 5, 0, Math.PI*2);
+    ctx.fill();
+    ctx.fillStyle = '#aa8800';
+    ctx.fillRect(x-1, y+bob, 2, 7);
+    ctx.fillRect(x+1, y+bob+2, 3, 2);
+    ctx.fillRect(x+1, y+bob+5, 3, 2);
+    // glow
+    ctx.fillStyle = 'rgba(255,215,0,0.15)';
+    ctx.beginPath();
+    ctx.arc(x, y+bob, 10, 0, Math.PI*2);
+    ctx.fill();
+  });
+}
+
+function drawFog() {
+  const px = player.x + TILE/2;
+  const py = player.y + TILE/2;
+  const grd = ctx.createRadialGradient(px, py, 40, px, py, 200);
+  grd.addColorStop(0, 'rgba(0,0,0,0)');
+  grd.addColorStop(0.6, 'rgba(0,0,5,0.3)');
+  grd.addColorStop(1, 'rgba(0,0,5,0.92)');
+  ctx.fillStyle = grd;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+}
+
+function update(dt) {
+  if (state !== 'playing') return;
+
+  let dx = 0, dy = 0;
+  if (keys.has('ArrowLeft') || keys.has('a') || keys.has('A')) dx = -1;
+  if (keys.has('ArrowRight') || keys.has('d') || keys.has('D')) dx = 1;
+  if (keys.has('ArrowUp') || keys.has('w') || keys.has('W')) dy = -1;
+  if (keys.has('ArrowDown') || keys.has('s') || keys.has('S')) dy = 1;
+
+  moveTimer += dt;
+  if (moveTimer >= 0.12 && (dx || dy)) {
+    moveTimer = 0;
+    const nr = player.r + dy;
+    const nc = player.c + dx;
+    if (!isWall(nr, nc)) {
+      player.r = nr;
+      player.c = nc;
+      player.x = nc * TILE;
+      player.y = nr * TILE;
+    }
+  }
+
+  // Pick up keys
+  keyItems.forEach(k => {
+    if (!k.collected && k.r === player.r && k.c === player.c) {
+      k.collected = true;
+      collectedKeys++;
+      itemCountEl.textContent = `鍵: ${collectedKeys}/3`;
+      if (collectedKeys >= 3) {
+        doorOpen = true;
+        statusEl.textContent = '出口の鍵が全部揃った！ドアが開いた！';
+      } else {
+        statusEl.textContent = `鍵を拾った！(${collectedKeys}/3)`;
+      }
+    }
+  });
+
+  // Check door escape
+  if (player.r === 13 && player.c === 13 && doorOpen) {
+    state = 'win';
+    gameResult = 'win';
+    showResult();
+    return;
+  }
+
+  // Move oni
+  oniMoveTimer += dt;
+  const oniDelay = Math.max(0.25, 0.55 - collectedKeys * 0.05);
+  if (oniMoveTimer >= oniDelay) {
+    oniMoveTimer = 0;
+    const path = bfsPath(oni.r, oni.c, player.r, player.c);
+    if (path.length > 1) {
+      oni.r = path[1][0];
+      oni.c = path[1][1];
+      oni.x = oni.c * TILE;
+      oni.y = oni.r * TILE;
+    }
+  }
+
+  // Check caught
+  if (oni.r === player.r && oni.c === player.c) {
+    state = 'dead';
+    shakeTimer = 0.5;
+    showResult();
+  }
+
+  if (shakeTimer > 0) shakeTimer -= dt;
+}
+
+function showResult() {
+  if (gameResult === 'win') {
+    msg.innerHTML = `<div style="background:rgba(0,20,0,0.85);border:1px solid #3a6;padding:20px 30px;border-radius:8px;color:#7fa">
+      <div style="font-size:22px;font-weight:bold;margin-bottom:8px;">🎉 脱出成功！</div>
+      <div style="font-size:13px;color:#5a8;margin-bottom:14px;">洋館から無事に逃げ出した...</div>
+      <button onclick="resetGame()" style="background:#1a4a2a;color:#7fa;border:1px solid #3a6;padding:8px 20px;cursor:pointer;font-family:monospace;font-size:13px;border-radius:4px;">もう一度</button>
+    </div>`;
+  } else {
+    msg.innerHTML = `<div style="background:rgba(20,0,0,0.88);border:1px solid #a33;padding:20px 30px;border-radius:8px;color:#f88">
+      <div style="font-size:22px;font-weight:bold;margin-bottom:8px;">💀 捕まった...</div>
+      <div style="font-size:13px;color:#a66;margin-bottom:14px;">青鬼に追いつかれてしまった。</div>
+      <button onclick="resetGame()" style="background:#3a0a0a;color:#f88;border:1px solid #a33;padding:8px 20px;cursor:pointer;font-family:monospace;font-size:13px;border-radius:4px;">もう一度</button>
+    </div>`;
+  }
+}
+
+function resetGame() {
+  player = { r: 1, c: 1, x: TILE, y: TILE };
+  oni = { r: oniStart.r, c: oniStart.c, x: oniStart.c*TILE, y: oniStart.r*TILE };
+  collectedKeys = 0;
+  keyItems = keyPositions.map(p => ({...p, collected: false}));
+  doorOpen = false;
+  moveTimer = 0;
+  oniMoveTimer = 0;
+  state = 'playing';
+  gameResult = '';
+  msg.innerHTML = '';
+  itemCountEl.textContent = '鍵: 0/3';
+  statusEl.textContent = '洋館から脱出せよ！';
+}
+
+function draw() {
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const shakeX = state === 'dead' && shakeTimer > 0 ? (Math.random()-0.5)*8 : 0;
+  const shakeY = state === 'dead' && shakeTimer > 0 ? (Math.random()-0.5)*8 : 0;
+  ctx.save();
+  ctx.translate(shakeX, shakeY);
+
+  for (let r = 0; r < ROWS; r++)
+    for (let c = 0; c < COLS; c++)
+      drawTile(r, c);
+
+  drawKeys();
+  drawPlayer();
+  drawOni();
+  drawFog();
+
+  ctx.restore();
+
+  if (state === 'dead' && shakeTimer <= 0) {
+    ctx.fillStyle = 'rgba(80,0,0,0.5)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+}
+
+let last = null;
+function loop(ts) {
+  if (!last) last = ts;
+  const dt = Math.min((ts - last) / 1000, 0.1);
+  last = ts;
+  update(dt);
+  draw();
+  requestAnimationFrame(loop);
+}
+
+document.addEventListener('keydown', e => {
+  keys.add(e.key);
+  if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) e.preventDefault();
+});
+document.addEventListener('keyup', e => keys.delete(e.key));
+
+// Touch / mobile D-pad
+const dpad = document.createElement('div');
+dpad.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:4px;margin-top:10px;';
+dpad.innerHTML = `
+  <button id="up" style="width:44px;height:44px;background:#222;color:#aaa;border:1px solid #444;border-radius:6px;font-size:18px;cursor:pointer;">▲</button>
+  <div style="display:flex;gap:4px;">
+    <button id="left" style="width:44px;height:44px;background:#222;color:#aaa;border:1px solid #444;border-radius:6px;font-size:18px;cursor:pointer;">◀</button>
+    <button id="down" style="width:44px;height:44px;background:#222;color:#aaa;border:1px solid #444;border-radius:6px;font-size:18px;cursor:pointer;">▼</button>
+    <button id="right" style="width:44px;height:44px;background:#222;color:#aaa;border:1px solid #444;border-radius:6px;font-size:18px;cursor:pointer;">▶</button>
+  </div>`;
+document.getElementById('gameContainer').appendChild(dpad);
+
+[['up','ArrowUp'],['down','ArrowDown'],['left','ArrowLeft'],['right','ArrowRight']].forEach(([id, key]) => {
+  const btn = document.getElementById(id);
+  const press = () => keys.add(key);
+  const release = () => keys.delete(key);
+  btn.addEventListener('mousedown', press);
+  btn.addEventListener('mouseup', release);
+  btn.addEventListener('touchstart', e => { e.preventDefault(); press(); });
+  btn.addEventListener('touchend', e => { e.preventDefault(); release(); });
+});
+
+window.resetGame = resetGame;
+requestAnimationFrame(loop);
+</script>

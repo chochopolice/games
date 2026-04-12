@@ -45,22 +45,22 @@
 
   .wrapper {
     display: flex;
-    gap: 24px;
+    gap: 20px;
     align-items: flex-start;
     padding: 20px;
   }
 
   .side-panel {
-    width: 160px;
+    width: 140px;
     display: flex;
     flex-direction: column;
-    gap: 20px;
+    gap: 16px;
   }
 
   .panel-box {
     border: 1px solid rgba(0, 255, 180, 0.25);
     background: rgba(0, 20, 30, 0.6);
-    padding: 14px;
+    padding: 12px;
     position: relative;
   }
 
@@ -76,7 +76,7 @@
     font-size: 8px;
     letter-spacing: 0.2em;
     color: rgba(0, 255, 180, 0.5);
-    margin-bottom: 10px;
+    margin-bottom: 8px;
     text-transform: uppercase;
   }
 
@@ -90,6 +90,49 @@
 
   .game-area {
     position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .stats-bar {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    margin-top: 10px;
+    width: 300px;
+  }
+
+  .stat-cell {
+    border: 1px solid rgba(0, 255, 180, 0.25);
+    background: rgba(0, 20, 30, 0.6);
+    padding: 10px 6px;
+    text-align: center;
+    position: relative;
+  }
+
+  .stat-cell::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border: 1px solid rgba(0, 255, 180, 0.06);
+    margin: 2px;
+  }
+
+  .stat-label {
+    font-size: 7px;
+    letter-spacing: 0.18em;
+    color: rgba(0, 255, 180, 0.5);
+    margin-bottom: 5px;
+    text-transform: uppercase;
+  }
+
+  .stat-value {
+    font-size: 15px;
+    font-weight: 900;
+    color: #00ffb4;
+    text-shadow: 0 0 12px rgba(0, 255, 180, 0.6);
+    letter-spacing: 0.04em;
   }
 
   .game-title {
@@ -201,27 +244,6 @@
 <div class="scanlines"></div>
 
 <div class="wrapper">
-  <!-- Left Panel -->
-  <div class="side-panel">
-    <div class="panel-box">
-      <div class="panel-label">Score</div>
-      <div class="panel-value" id="score">0</div>
-    </div>
-    <div class="panel-box">
-      <div class="panel-label">Level</div>
-      <div class="panel-value" id="level">1</div>
-      <div class="level-bar-wrap"><div id="level-bar"></div></div>
-    </div>
-    <div class="panel-box">
-      <div class="panel-label">Lines</div>
-      <div class="panel-value" id="lines">0</div>
-    </div>
-    <div class="panel-box">
-      <div class="panel-label">Best</div>
-      <div class="panel-value" id="best">0</div>
-    </div>
-  </div>
-
   <!-- Game Area -->
   <div class="game-area">
     <div class="game-title">TETRIS</div>
@@ -233,12 +255,32 @@
         <button id="start-btn">START</button>
       </div>
     </div>
+    <!-- Stats Bar (below game board) -->
+    <div class="stats-bar">
+      <div class="stat-cell">
+        <div class="stat-label">Score</div>
+        <div class="stat-value" id="score">0</div>
+      </div>
+      <div class="stat-cell">
+        <div class="stat-label">Level</div>
+        <div class="stat-value" id="level">1</div>
+        <div class="level-bar-wrap"><div id="level-bar"></div></div>
+      </div>
+      <div class="stat-cell">
+        <div class="stat-label">Lines</div>
+        <div class="stat-value" id="lines">0</div>
+      </div>
+      <div class="stat-cell">
+        <div class="stat-label">Best</div>
+        <div class="stat-value" id="best">0</div>
+      </div>
+    </div>
     <div class="controls-hint">
       <span>← →</span> 移動　<span>↑</span> 回転　<span>↓</span> 落下　<span>SPC</span> ハードドロップ
     </div>
   </div>
 
-  <!-- Right Panel -->
+  <!-- Right Panel (Next / Hold) -->
   <div class="side-panel">
     <div class="panel-box">
       <div class="panel-label">Next</div>
