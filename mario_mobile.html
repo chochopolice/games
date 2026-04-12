@@ -12,7 +12,6 @@
 
 html, body {
   width: 100%; height: 100%;
-  /* dvh でブラウザUIを除いた実際の表示領域を使う */
   height: 100dvh;
   overflow: hidden;
   background: #0d0620;
@@ -21,29 +20,18 @@ html, body {
   user-select: none;
 }
 
-#wrap {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  width: 100%;
-  height: 100%;
-  height: 100dvh;
-}
-
-/* キャンバスエリア: 残り高さを全部使うが、横幅でもはみ出さない */
+/* キャンバスを全画面に */
 #canvasWrap {
-  flex: 1 1 0;
-  min-height: 0;          /* flex子要素が縮めるよう必須 */
-  width: 100%;
+  position: fixed;
+  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  overflow: hidden;
+  background: #0d0620;
 }
 
 canvas {
   display: block;
-  /* 縦横どちらもはみ出さない最大サイズに収める */
   max-width: 100%;
   max-height: 100%;
   width: auto;
@@ -52,33 +40,26 @@ canvas {
   image-rendering: crisp-edges;
 }
 
-/* ── Virtual Controls ── */
-#controls {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  height: 190px;
-  padding: 10px 24px 36px; /* 下36pxの余白 */
-}
-
-/* ── D-pad (left) ── */
+/* ── 十字キー: 左下オーバーレイ ── */
 #dpad {
+  position: fixed;
+  left: 16px;
+  bottom: 28px;
   display: grid;
-  grid-template-columns: repeat(3, 58px);
-  grid-template-rows: repeat(3, 58px);
+  grid-template-columns: repeat(3, 62px);
+  grid-template-rows: repeat(3, 62px);
   gap: 3px;
+  z-index: 10;
 }
 
 .dpad-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255,255,255,0.13);
-  border: 2px solid rgba(255,255,255,0.22);
+  background: rgba(255,255,255,0.15);
+  border: 2px solid rgba(255,255,255,0.28);
   color: rgba(255,255,255,0.9);
-  font-size: 24px;
+  font-size: 26px;
   cursor: pointer;
   touch-action: none;
   -webkit-tap-highlight-color: transparent;
@@ -86,31 +67,36 @@ canvas {
   transition: background 0.07s;
 }
 .dpad-btn.pressed, .dpad-btn:active {
-  background: rgba(255,215,0,0.40);
+  background: rgba(255,215,0,0.45);
   border-color: #FFD700;
+  color: #FFD700;
 }
-#dpad-up    { grid-column:2; grid-row:1; border-radius: 8px 8px 0 0; }
-#dpad-left  { grid-column:1; grid-row:2; border-radius: 8px 0 0 8px; }
-#dpad-center{ grid-column:2; grid-row:2; background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.10); pointer-events:none; }
-#dpad-right { grid-column:3; grid-row:2; border-radius: 0 8px 8px 0; }
-#dpad-down  { grid-column:2; grid-row:3; border-radius: 0 0 8px 8px; }
+#dpad-up     { grid-column:2; grid-row:1; border-radius: 10px 10px 0 0; }
+#dpad-left   { grid-column:1; grid-row:2; border-radius: 10px 0 0 10px; }
+#dpad-center { grid-column:2; grid-row:2; background: rgba(255,255,255,0.07); border-color: rgba(255,255,255,0.12); pointer-events:none; }
+#dpad-right  { grid-column:3; grid-row:2; border-radius: 0 10px 10px 0; }
+#dpad-down   { grid-column:2; grid-row:3; border-radius: 0 0 10px 10px; }
 
-/* ── Action buttons (right) ── */
+/* ── アクションボタン: 右下オーバーレイ ── */
 #actions {
+  position: fixed;
+  right: 20px;
+  bottom: 28px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
+  z-index: 10;
 }
 
 .act-btn {
   border-radius: 50%;
-  border: 3px solid rgba(255,255,255,0.25);
-  background: rgba(255,255,255,0.12);
+  border: 3px solid rgba(255,255,255,0.28);
+  background: rgba(255,255,255,0.15);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: rgba(255,255,255,0.9);
+  color: rgba(255,255,255,0.95);
   font-family: 'Courier New', monospace;
   font-weight: bold;
   cursor: pointer;
@@ -120,51 +106,50 @@ canvas {
   transition: background 0.07s;
 }
 .act-btn.pressed, .act-btn:active {
-  background: rgba(255,215,0,0.40);
+  background: rgba(255,215,0,0.45);
   border-color: #FFD700;
+  color: #FFD700;
 }
 #btnJ {
-  width: 86px; height: 86px; font-size: 34px;
-  background: rgba(255,70,0,0.28); border-color: rgba(255,140,0,0.55);
+  width: 90px; height: 90px; font-size: 36px;
+  background: rgba(255,70,0,0.30); border-color: rgba(255,160,0,0.60);
 }
-#btnJ.pressed { background: rgba(255,120,0,0.55); }
+#btnJ.pressed { background: rgba(255,130,0,0.60); }
 #btnDash {
-  width: 60px; height: 60px; font-size: 12px;
-  background: rgba(100,100,255,0.22); border-color: rgba(150,150,255,0.45);
+  width: 62px; height: 62px; font-size: 13px;
+  background: rgba(100,100,255,0.25); border-color: rgba(160,160,255,0.50);
 }
-#btnDash.pressed { background: rgba(130,130,255,0.50); }
+#btnDash.pressed { background: rgba(140,140,255,0.55); }
 
-/* 横向き */
+/* 横向き: ボタンを少し小さく・位置調整 */
 @media (orientation: landscape) {
-  #controls { height: 130px; padding: 4px 28px 20px; }
-  #dpad { grid-template-columns: repeat(3, 42px); grid-template-rows: repeat(3, 42px); }
-  .dpad-btn { font-size: 18px; }
-  #btnJ    { width: 66px; height: 66px; font-size: 26px; }
-  #btnDash { width: 48px; height: 48px; font-size: 11px; }
+  #dpad  { left: 12px; bottom: 16px; grid-template-columns: repeat(3, 50px); grid-template-rows: repeat(3, 50px); }
+  .dpad-btn { font-size: 20px; }
+  #actions { right: 16px; bottom: 16px; gap: 8px; }
+  #btnJ    { width: 72px; height: 72px; font-size: 28px; }
+  #btnDash { width: 50px; height: 50px; font-size: 11px; }
 }
 </style>
 </head>
 <body>
-<div id="wrap">
-  <div id="canvasWrap">
+<div id="canvasWrap">
     <canvas id="c"></canvas>
   </div>
-  <div id="controls">
-    <!-- 左: 十字キー -->
-    <div id="dpad">
-      <div class="dpad-btn" id="dpad-up">&#9650;</div>
-      <div class="dpad-btn" id="dpad-left">&#9664;</div>
-      <div class="dpad-btn" id="dpad-center"></div>
-      <div class="dpad-btn" id="dpad-right">&#9654;</div>
-      <div class="dpad-btn" id="dpad-down">&#9660;</div>
-    </div>
-    <!-- 右: ジャンプ + ダッシュ -->
-    <div id="actions">
-      <div class="act-btn" id="btnJ">&#9650;</div>
-      <div class="act-btn" id="btnDash">DASH</div>
-    </div>
+
+  <!-- 左下: 十字キー -->
+  <div id="dpad">
+    <div class="dpad-btn" id="dpad-up">&#9650;</div>
+    <div class="dpad-btn" id="dpad-left">&#9664;</div>
+    <div class="dpad-btn" id="dpad-center"></div>
+    <div class="dpad-btn" id="dpad-right">&#9654;</div>
+    <div class="dpad-btn" id="dpad-down">&#9660;</div>
   </div>
-</div>
+
+  <!-- 右下: ジャンプ + ダッシュ -->
+  <div id="actions">
+    <div class="act-btn" id="btnJ">&#9650;</div>
+    <div class="act-btn" id="btnDash">DASH</div>
+  </div>
 
 <script>
 // ─── Canvas setup: internal resolution ───
