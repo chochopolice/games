@@ -371,7 +371,9 @@ function update() {
       var qc = ld.qblocks[qi3];
       if (qc.hit) continue;
       var qcy = qc.y + qc.bounce;
-      if (overlaps(p.x, p.y, PW, PH, qc.x, qcy, qc.w, qc.h) && p.y > qcy) {
+      var xHit = p.x + PW > qc.x && p.x < qc.x + qc.w;
+        var yHit = Math.abs(p.y - (qcy + qc.h)) < 6;
+        if (xHit && yHit) {
         qc.hit = true; qc.bounce = -9;
         spawnParts(qc.x + TW/2, qc.y, '#FFD700', 5);
         if (qc.itemType === 'coin') {
