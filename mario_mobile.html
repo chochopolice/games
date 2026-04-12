@@ -12,6 +12,8 @@
 
 html, body {
   width: 100%; height: 100%;
+  /* dvh でブラウザUIを除いた実際の表示領域を使う */
+  height: 100dvh;
   overflow: hidden;
   background: #0d0620;
   touch-action: none;
@@ -25,50 +27,47 @@ html, body {
   align-items: center;
   width: 100%;
   height: 100%;
+  height: 100dvh;
 }
 
-#title {
-  color: #FFD700;
-  font-family: 'Courier New', monospace;
-  font-size: 14px;
-  font-weight: bold;
-  text-shadow: 1px 1px 0 #FF4500, 2px 2px 0 #8B0000;
-  letter-spacing: 1px;
-  padding: 4px 0 2px;
-  flex-shrink: 0;
-}
-
+/* キャンバスエリア: 残り高さを全部使うが、横幅でもはみ出さない */
 #canvasWrap {
-  position: relative;
+  flex: 1 1 0;
+  min-height: 0;          /* flex子要素が縮めるよう必須 */
   width: 100%;
-  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
 }
 
 canvas {
   display: block;
-  width: 100%;
+  /* 縦横どちらもはみ出さない最大サイズに収める */
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
   height: auto;
-  /* pixel-perfect scaling */
   image-rendering: pixelated;
   image-rendering: crisp-edges;
 }
 
 /* ── Virtual Controls ── */
 #controls {
+  flex-shrink: 0;          /* 操作エリアは縮めない */
   display: flex;
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  padding: 6px 16px 10px;
-  flex: 1;
-  max-height: 160px;
+  height: 150px;
+  padding: 8px 20px 12px;
 }
 
 /* ── D-pad (left) ── */
 #dpad {
   display: grid;
-  grid-template-columns: repeat(3, 52px);
-  grid-template-rows: repeat(3, 52px);
+  grid-template-columns: repeat(3, 48px);
+  grid-template-rows: repeat(3, 48px);
   gap: 2px;
 }
 
@@ -79,7 +78,7 @@ canvas {
   background: rgba(255,255,255,0.13);
   border: 2px solid rgba(255,255,255,0.22);
   color: rgba(255,255,255,0.9);
-  font-size: 22px;
+  font-size: 20px;
   cursor: pointer;
   touch-action: none;
   -webkit-tap-highlight-color: transparent;
@@ -90,7 +89,6 @@ canvas {
   background: rgba(255,215,0,0.40);
   border-color: #FFD700;
 }
-/* Cross shape: hide corners, round edges on arms */
 #dpad-up    { grid-column:2; grid-row:1; border-radius: 8px 8px 0 0; }
 #dpad-left  { grid-column:1; grid-row:2; border-radius: 8px 0 0 8px; }
 #dpad-center{ grid-column:2; grid-row:2; background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.10); pointer-events:none; }
@@ -102,7 +100,7 @@ canvas {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 
 .act-btn {
@@ -126,31 +124,28 @@ canvas {
   border-color: #FFD700;
 }
 #btnJ {
-  width: 76px; height: 76px; font-size: 30px;
+  width: 70px; height: 70px; font-size: 28px;
   background: rgba(255,70,0,0.28); border-color: rgba(255,140,0,0.55);
 }
 #btnJ.pressed { background: rgba(255,120,0,0.55); }
 #btnDash {
-  width: 54px; height: 54px; font-size: 12px;
+  width: 50px; height: 50px; font-size: 11px;
   background: rgba(100,100,255,0.22); border-color: rgba(150,150,255,0.45);
-  letter-spacing: -0.5px;
 }
 #btnDash.pressed { background: rgba(130,130,255,0.50); }
 
-/* Landscape */
+/* 横向き: コントロールを少し小さくする */
 @media (orientation: landscape) {
-  #title { font-size: 12px; padding: 2px 0; }
-  #controls { max-height: 120px; padding: 4px 20px 6px; }
-  #dpad { grid-template-columns: repeat(3, 44px); grid-template-rows: repeat(3, 44px); }
-  .dpad-btn { font-size: 18px; }
-  #btnJ    { width: 64px; height: 64px; font-size: 26px; }
-  #btnDash { width: 46px; height: 46px; font-size: 11px; }
+  #controls { height: 110px; padding: 4px 24px 8px; }
+  #dpad { grid-template-columns: repeat(3, 38px); grid-template-rows: repeat(3, 38px); }
+  .dpad-btn { font-size: 16px; }
+  #btnJ    { width: 58px; height: 58px; font-size: 22px; }
+  #btnDash { width: 42px; height: 42px; font-size: 10px; }
 }
 </style>
 </head>
 <body>
 <div id="wrap">
-  <div id="title">&#11088; SUPER CLAUDE BROS &#11088;</div>
   <div id="canvasWrap">
     <canvas id="c"></canvas>
   </div>
