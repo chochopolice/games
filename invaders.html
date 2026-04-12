@@ -1,0 +1,291 @@
+
+<style>
+  #game-wrap { display: flex; flex-direction: column; align-items: center; padding: 1rem 0; font-family: var(--font-mono); }
+  #hud { display: flex; gap: 2rem; margin-bottom: 0.75rem; font-size: 14px; color: var(--color-text-secondary); }
+  #hud span { color: var(--color-text-primary); font-weight: 500; }
+  canvas { border: 0.5px solid var(--color-border-secondary); border-radius: 4px; background: #0a0a14; display: block; }
+  #controls { margin-top: 0.75rem; font-size: 12px; color: var(--color-text-tertiary); }
+  #msg { margin-top: 0.75rem; font-size: 15px; font-weight: 500; color: var(--color-text-primary); min-height: 22px; }
+  #btn { margin-top: 0.5rem; display: none; padding: 8px 24px; border: 0.5px solid var(--color-border-secondary); border-radius: var(--border-radius-md); background: transparent; color: var(--color-text-primary); cursor: pointer; font-size: 14px; }
+  #btn:hover { background: var(--color-background-secondary); }
+</style>
+<div id="game-wrap">
+  <div id="hud">スコア: <span id="score-val">0</span> &nbsp; ライフ: <span id="life-val">♥ ♥ ♥</span> &nbsp; Lv: <span id="level-val">1</span></div>
+  <canvas id="c" width="480" height="400"></canvas>
+  <div id="msg"></div>
+  <button id="btn" onclick="startGame()">もう一度プレイ</button>
+  <div id="controls">← → で移動 &nbsp;|&nbsp; スペースで射撃 &nbsp;|&nbsp; モバイル: 画面をタップ</div>
+</div>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+
+let player, bullets, enemyBullets, enemies, barriers, score, lives, level, gameRunning, animId, keys, ufo, ufoTimer, enemyDir, enemyMoveTimer, enemySpeed, fireTimer;
+
+const ENEMY_COLS = 10, ENEMY_ROWS = 4;
+const ENEMY_W = 32, ENEMY_H = 22, ENEMY_GAP_X = 10, ENEMY_GAP_Y = 8;
+
+function initGame() {
+  score = 0; lives = 3; level = 1;
+  player = { x: W/2 - 16, y: H - 44, w: 32, h: 14, speed: 4 };
+  bullets = []; enemyBullets = []; ufo = null; ufoTimer = 0;
+  keys = {};
+  enemyDir = 1; enemyMoveTimer = 0; enemySpeed = 0.7;
+  fireTimer = 0;
+  createEnemies();
+  createBarriers();
+  updateHUD();
+}
+
+function createEnemies() {
+  enemies = [];
+  const startX = 30, startY = 55;
+  for (let r = 0; r < ENEMY_ROWS; r++) {
+    for (let c = 0; c < ENEMY_COLS; c++) {
+      enemies.push({ x: startX + c*(ENEMY_W+ENEMY_GAP_X), y: startY + r*(ENEMY_H+ENEMY_GAP_Y), w: ENEMY_W, h: ENEMY_H, row: r, frame: 0, alive: true });
+    }
+  }
+}
+
+function createBarriers() {
+  barriers = [];
+  const positions = [70, 185, 300, 415];
+  for (let bx of positions) {
+    for (let row = 0; row < 4; row++) {
+      for (let col = 0; col < 7; col++) {
+        if (row === 0 && (col === 0 || col === 6)) continue;
+        if (row === 3 && (col === 0 || col === 1 || col === 5 || col === 6)) continue;
+        barriers.push({ x: bx + col*8, y: H - 90 + row*8, w: 8, h: 8, hp: 3 });
+      }
+    }
+  }
+}
+
+function updateHUD() {
+  document.getElementById('score-val').textContent = score;
+  document.getElementById('life-val').textContent = '♥ '.repeat(lives).trim() || '×';
+  document.getElementById('level-val').textContent = level;
+}
+
+function drawPlayer(x, y) {
+  ctx.fillStyle = '#4af';
+  ctx.fillRect(x+12, y, 8, 4);
+  ctx.fillRect(x+4, y+4, 24, 4);
+  ctx.fillRect(x, y+8, 32, 6);
+  ctx.fillStyle = '#6cf';
+  ctx.fillRect(x+14, y+1, 4, 2);
+}
+
+function drawEnemy(e) {
+  const t = e.frame, r = e.row;
+  ctx.fillStyle = r===0 ? '#f8a' : r<=2 ? '#afa' : '#ffa';
+  const x = e.x, y = e.y;
+  if (r === 0) {
+    ctx.fillRect(x+8, y, 16, 4);
+    ctx.fillRect(x+4, y+4, 24, 4);
+    ctx.fillRect(x, y+8, 32, 6);
+    ctx.fillRect(x+4, y+14, 8, 4); ctx.fillRect(x+20, y+14, 8, 4);
+    if (t%2===0) { ctx.fillRect(x, y+6, 4, 6); ctx.fillRect(x+28, y+6, 4, 6); }
+    else { ctx.fillRect(x+2, y+10, 4, 4); ctx.fillRect(x+26, y+10, 4, 4); }
+  } else if (r <= 2) {
+    ctx.fillRect(x+4, y, 24, 4);
+    ctx.fillRect(x, y+4, 32, 8);
+    ctx.fillRect(x+4, y+12, 8, 4); ctx.fillRect(x+20, y+12, 8, 4);
+    if (t%2===0) { ctx.fillRect(x, y+4, 4, 8); ctx.fillRect(x+28, y+4, 4, 8); }
+    else { ctx.fillRect(x+2, y+8, 4, 6); ctx.fillRect(x+26, y+8, 4, 6); }
+  } else {
+    ctx.fillRect(x+8, y, 16, 6);
+    ctx.fillRect(x, y+6, 32, 8);
+    ctx.fillRect(x+4, y+14, 24, 4);
+    ctx.fillRect(x, y+6, 6, 6); ctx.fillRect(x+26, y+6, 6, 6);
+    if (t%2===0) { ctx.fillRect(x+2, y+14, 4, 4); ctx.fillRect(x+26, y+14, 4, 4); }
+    else { ctx.fillRect(x, y+16, 4, 2); ctx.fillRect(x+28, y+16, 4, 2); }
+  }
+}
+
+function drawUFO() {
+  if (!ufo) return;
+  ctx.fillStyle = '#f55';
+  ctx.fillRect(ufo.x+10, ufo.y+2, 20, 6);
+  ctx.fillRect(ufo.x, ufo.y+8, 40, 8);
+  ctx.fillRect(ufo.x+6, ufo.y+16, 28, 4);
+  ctx.fillStyle = '#faa'; ctx.fillRect(ufo.x+12, ufo.y+4, 4, 4); ctx.fillRect(ufo.x+20, ufo.y+4, 4, 4); ctx.fillRect(ufo.x+28, ufo.y+4, 4, 4);
+}
+
+function drawBarrier(b) {
+  ctx.fillStyle = b.hp >= 3 ? '#4d4' : b.hp === 2 ? '#4a4' : '#363';
+  ctx.fillRect(b.x, b.y, b.w, b.h);
+}
+
+function drawExplosion(x, y, color) {
+  ctx.fillStyle = color || '#ff0';
+  for (let i = 0; i < 6; i++) {
+    const a = i*60*Math.PI/180, d = 6;
+    ctx.fillRect(x + Math.cos(a)*d - 2, y + Math.sin(a)*d - 2, 4, 4);
+  }
+}
+
+let explosions = [];
+
+function rect(a, b) {
+  return a.x < b.x+b.w && a.x+a.w > b.x && a.y < b.y+b.h && a.y+a.h > b.y;
+}
+
+function gameLoop() {
+  if (!gameRunning) return;
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#0a0a14'; ctx.fillRect(0, 0, W, H);
+
+  const now = Date.now();
+
+  if (keys['ArrowLeft'] || keys['a']) player.x = Math.max(0, player.x - player.speed);
+  if (keys['ArrowRight'] || keys['d']) player.x = Math.min(W - player.w, player.x + player.speed);
+  if ((keys[' '] || keys['Space']) && bullets.length < 2) {
+    bullets.push({ x: player.x+14, y: player.y, w: 4, h: 10, speed: 7 });
+    keys[' '] = false; keys['Space'] = false;
+  }
+
+  const alive = enemies.filter(e => e.alive);
+  enemyMoveTimer++;
+  const moveInterval = Math.max(4, 40 - alive.length*2 - (level-1)*3);
+  if (enemyMoveTimer >= moveInterval) {
+    enemyMoveTimer = 0;
+    let edgeHit = false;
+    for (let e of alive) {
+      e.frame ^= 1;
+      e.x += enemyDir * (3 + level*0.5);
+      if (e.x <= 4 || e.x + e.w >= W-4) edgeHit = true;
+    }
+    if (edgeHit) {
+      enemyDir *= -1;
+      for (let e of alive) { e.y += 10; e.x += enemyDir*4; }
+      if (alive.some(e => e.y + e.h >= player.y - 4)) { endGame(false); return; }
+    }
+  }
+
+  fireTimer++;
+  if (alive.length > 0 && fireTimer >= Math.max(30, 90 - level*8)) {
+    fireTimer = 0;
+    const shooter = alive[Math.floor(Math.random()*alive.length)];
+    enemyBullets.push({ x: shooter.x+14, y: shooter.y+shooter.h, w: 4, h: 10, speed: 3+level*0.4 });
+  }
+
+  for (let b of bullets) b.y -= b.speed;
+  bullets = bullets.filter(b => b.y > -10);
+
+  for (let b of enemyBullets) b.y += b.speed;
+  enemyBullets = enemyBullets.filter(b => b.y < H+10);
+
+  ufoTimer++;
+  if (!ufo && ufoTimer > 400 + Math.random()*300) {
+    ufoTimer = 0;
+    ufo = { x: -42, y: 16, w: 40, h: 20, speed: 1.5 };
+  }
+  if (ufo) {
+    ufo.x += ufo.speed;
+    if (ufo.x > W+10) ufo = null;
+  }
+
+  for (let b of [...bullets]) {
+    if (ufo && rect(b, ufo)) {
+      score += 100 + Math.floor(Math.random()*100)*5;
+      explosions.push({ x: ufo.x+20, y: ufo.y+10, t: 8, c: '#f88' });
+      ufo = null; bullets.splice(bullets.indexOf(b), 1); updateHUD();
+    }
+    for (let e of enemies) {
+      if (e.alive && rect(b, e)) {
+        e.alive = false;
+        score += (ENEMY_ROWS - e.row) * 10;
+        explosions.push({ x: e.x+e.w/2, y: e.y+e.h/2, t: 8, c: e.row===0?'#faa':e.row<=2?'#afa':'#ffa' });
+        bullets.splice(bullets.indexOf(b), 1);
+        updateHUD();
+        break;
+      }
+    }
+    for (let bar of barriers) {
+      if (bar.hp > 0 && rect(b, bar)) {
+        bar.hp--; bullets.splice(bullets.indexOf(b), 1); break;
+      }
+    }
+  }
+
+  for (let b of [...enemyBullets]) {
+    if (rect(b, {...player, y: player.y})) {
+      lives--;
+      explosions.push({ x: player.x+16, y: player.y+7, t: 15, c: '#4af' });
+      enemyBullets.splice(enemyBullets.indexOf(b), 1);
+      updateHUD();
+      if (lives <= 0) { endGame(false); return; }
+      break;
+    }
+    for (let bar of barriers) {
+      if (bar.hp > 0 && rect(b, bar)) {
+        bar.hp--; enemyBullets.splice(enemyBullets.indexOf(b), 1); break;
+      }
+    }
+  }
+
+  drawPlayer(player.x, player.y);
+  for (let e of enemies) if (e.alive) drawEnemy(e);
+  drawUFO();
+  for (let bar of barriers) if (bar.hp > 0) drawBarrier(bar);
+
+  ctx.fillStyle = '#4f9';
+  for (let b of bullets) ctx.fillRect(b.x, b.y, b.w, b.h);
+  ctx.fillStyle = '#f84';
+  for (let b of enemyBullets) ctx.fillRect(b.x, b.y, b.w, b.h);
+
+  explosions = explosions.filter(e => e.t-- > 0);
+  for (let e of explosions) drawExplosion(e.x, e.y, e.c);
+
+  ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(0, H-20); ctx.lineTo(W, H-20); ctx.stroke();
+  ctx.fillStyle = '#4af'; ctx.font = '11px monospace';
+  for (let i=0; i<lives; i++) drawPlayer(10+i*38, H-18);
+
+  if (!enemies.some(e => e.alive)) {
+    level++; enemySpeed += 0.5;
+    bullets = []; enemyBullets = []; ufo = null;
+    createEnemies();
+    updateHUD();
+  }
+
+  animId = requestAnimationFrame(gameLoop);
+}
+
+function endGame(win) {
+  gameRunning = false;
+  cancelAnimationFrame(animId);
+  const msg = document.getElementById('msg');
+  msg.textContent = win ? 'ステージクリア！' : `ゲームオーバー — スコア: ${score}`;
+  document.getElementById('btn').style.display = 'inline-block';
+}
+
+function startGame() {
+  cancelAnimationFrame(animId);
+  document.getElementById('msg').textContent = '';
+  document.getElementById('btn').style.display = 'none';
+  explosions = [];
+  initGame();
+  gameRunning = true;
+  gameLoop();
+}
+
+document.addEventListener('keydown', e => { keys[e.key] = true; e.preventDefault && (e.key===' '||e.key.startsWith('Arrow')) && e.preventDefault(); });
+document.addEventListener('keyup', e => { keys[e.key] = false; });
+
+let touchStartX = null;
+canvas.addEventListener('touchstart', e => { touchStartX = e.touches[0].clientX; keys[' '] = true; e.preventDefault(); }, {passive:false});
+canvas.addEventListener('touchmove', e => {
+  if (touchStartX !== null) {
+    const dx = e.touches[0].clientX - touchStartX;
+    if (dx > 8) { keys['ArrowRight'] = true; keys['ArrowLeft'] = false; }
+    else if (dx < -8) { keys['ArrowLeft'] = true; keys['ArrowRight'] = false; }
+  }
+  e.preventDefault();
+}, {passive:false});
+canvas.addEventListener('touchend', () => { keys['ArrowLeft']=false; keys['ArrowRight']=false; touchStartX=null; });
+
+startGame();
+</script>

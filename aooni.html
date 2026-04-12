@@ -1,37 +1,11 @@
 
 <style>
-* { margin: 0; padding: 0; box-sizing: border-box; }
-body { background: #000; }
-#gameContainer {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 1rem 0;
-  min-height: 600px;
-  background: transparent;
-  font-family: var(--font-mono, monospace);
-}
-#canvas {
-  border: 2px solid #333;
-  display: block;
-  image-rendering: pixelated;
-}
-#ui {
-  color: #aaa;
-  font-size: 13px;
-  margin-top: 10px;
-  text-align: center;
-}
-#message {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  text-align: center;
-  pointer-events: none;
-}
-#canvasWrap { position: relative; display: inline-block; }
+* { margin:0; padding:0; box-sizing:border-box; }
+#gameContainer { display:flex; flex-direction:column; align-items:center; padding:1rem 0; font-family:var(--font-mono,monospace); }
+#canvas { border:2px solid #333; display:block; image-rendering:pixelated; }
+#ui { color:#aaa; font-size:13px; margin-top:8px; text-align:center; line-height:1.8; }
+#canvasWrap { position:relative; display:inline-block; }
+#message { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); text-align:center; pointer-events:none; z-index:10; min-width:220px; }
 </style>
 <div id="gameContainer">
   <div id="canvasWrap">
@@ -55,357 +29,296 @@ const TILE = 32;
 const COLS = 15;
 const ROWS = 15;
 
-// Map: 0=wall, 1=floor, 2=key, 3=door, 4=oni_spawn
-const mapData = [
-  [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-  [0,1,1,1,0,1,1,1,1,1,0,1,1,1,0],
-  [0,1,0,1,1,1,0,0,0,1,0,1,0,1,0],
-  [0,1,0,0,0,0,0,1,0,1,1,1,0,1,0],
-  [0,1,1,1,0,1,0,1,0,0,0,0,0,1,0],
-  [0,0,0,1,0,1,1,1,1,1,1,1,0,1,0],
-  [0,1,1,1,0,0,0,1,0,0,0,1,0,1,0],
-  [0,1,0,0,0,1,0,1,0,1,0,1,1,1,0],
-  [0,1,0,1,1,1,0,0,0,1,0,0,0,1,0],
-  [0,1,0,1,0,0,0,1,0,1,1,1,0,1,0],
-  [0,1,1,1,0,1,1,1,0,0,0,1,0,1,0],
-  [0,0,0,1,0,1,0,0,0,1,0,1,0,1,0],
-  [0,1,1,1,0,1,0,1,1,1,0,1,1,1,0],
-  [0,1,0,0,0,1,1,1,0,0,0,0,0,3,0],
-  [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-];
+// ---- Maze generation (Recursive Backtracker) ----
+// Cells at odd (r,c), walls between cells at even coords
+function generateMaze() {
+  const grid = Array.from({length:ROWS}, ()=>new Array(COLS).fill(0));
 
-const keyPositions = [{r:1,c:11},{r:6,c:1},{r:10,c:5}];
-const oniStart = {r:13,c:1};
+  // All odd-coord cells become floor
+  function carve(r, c) {
+    grid[r][c] = 1;
+    const dirs = [[0,2],[0,-2],[2,0],[-2,0]].sort(()=>Math.random()-0.5);
+    for (const [dr,dc] of dirs) {
+      const nr = r+dr, nc = c+dc;
+      if (nr>0&&nr<ROWS-1&&nc>0&&nc<COLS-1&&grid[nr][nc]===0) {
+        grid[r+dr/2][c+dc/2] = 1; // knock down wall between
+        carve(nr, nc);
+      }
+    }
+  }
+  carve(1, 1);
 
-let state = 'playing';
-let keys = new Set();
-let player = { r: 1, c: 1, x: 1*TILE, y: 1*TILE, vel:{x:0,y:0} };
-let oni = { r: oniStart.r, c: oniStart.c, x: oniStart.c*TILE, y: oniStart.r*TILE, timer: 0, speed: 0.4 };
-let collectedKeys = 0;
-let keyItems = keyPositions.map(p => ({...p, collected: false}));
-let doorOpen = false;
-let moveTimer = 0;
-let oniMoveTimer = 0;
-let shakeTimer = 0;
-let fadeAlpha = 0;
-let gameResult = '';
-let flashTimer = 0;
-
-const COLORS = {
-  wall: '#1a1a2e',
-  wallEdge: '#0d0d1a',
-  floor: '#16213e',
-  player: '#e8c97e',
-  playerBody: '#c8a96e',
-  oni: '#4488ff',
-  oniDark: '#2244cc',
-  oniEye: '#ffffff',
-  key: '#ffd700',
-  door: '#8b6914',
-  doorOpen: '#3a5a2a',
-  ui: '#e0e0e0',
-};
-
-function isWall(r, c) {
-  if (r < 0 || r >= ROWS || c < 0 || c >= COLS) return true;
-  if (mapData[r][c] === 0) return true;
-  if (mapData[r][c] === 3 && !doorOpen) return true;
-  return false;
+  // Door at bottom-right cell
+  grid[ROWS-2][COLS-2] = 3;
+  return grid;
 }
 
-function bfsPath(fromR, fromC, toR, toC) {
-  const visited = Array.from({length: ROWS}, () => new Array(COLS).fill(false));
-  const parent = Array.from({length: ROWS}, () => new Array(COLS).fill(null));
-  const queue = [[fromR, fromC]];
-  visited[fromR][fromC] = true;
-  const dirs = [[0,1],[0,-1],[1,0],[-1,0]];
-  while (queue.length > 0) {
-    const [r, c] = queue.shift();
-    if (r === toR && c === toC) {
-      let path = [[r, c]];
-      let cur = [r, c];
-      while (parent[cur[0]][cur[1]]) {
-        cur = parent[cur[0]][cur[1]];
-        path.unshift(cur);
-      }
+// BFS to find all reachable floor cells from (r,c)
+function reachable(grid, r, c) {
+  const visited = Array.from({length:ROWS},()=>new Array(COLS).fill(false));
+  const q = [[r,c]]; visited[r][c]=true; const cells=[];
+  const dirs=[[0,1],[0,-1],[1,0],[-1,0]];
+  while(q.length) {
+    const [cr,cc]=q.shift(); cells.push([cr,cc]);
+    for(const[dr,dc]of dirs){
+      const nr=cr+dr,nc=cc+dc;
+      if(nr<0||nr>=ROWS||nc<0||nc>=COLS) continue;
+      if(visited[nr][nc]) continue;
+      if(grid[nr][nc]===0) continue;
+      visited[nr][nc]=true; q.push([nr,nc]);
+    }
+  }
+  return cells;
+}
+
+function bfsPath(grid, doorOpen, fromR, fromC, toR, toC) {
+  const visited=Array.from({length:ROWS},()=>new Array(COLS).fill(false));
+  const parent=Array.from({length:ROWS},()=>new Array(COLS).fill(null));
+  const q=[[fromR,fromC]]; visited[fromR][fromC]=true;
+  const dirs=[[0,1],[0,-1],[1,0],[-1,0]];
+  while(q.length){
+    const[r,c]=q.shift();
+    if(r===toR&&c===toC){
+      let path=[[r,c]],cur=[r,c];
+      while(parent[cur[0]][cur[1]]){cur=parent[cur[0]][cur[1]];path.unshift(cur);}
       return path;
     }
-    for (const [dr, dc] of dirs) {
-      const nr = r + dr, nc = c + dc;
-      if (!visited[nr] || visited[nr][nc]) continue;
-      if (isWall(nr, nc)) continue;
-      visited[nr][nc] = true;
-      parent[nr][nc] = [r, c];
-      queue.push([nr, nc]);
+    for(const[dr,dc]of dirs){
+      const nr=r+dr,nc=c+dc;
+      if(nr<0||nr>=ROWS||nc<0||nc>=COLS) continue;
+      if(visited[nr][nc]) continue;
+      if(grid[nr][nc]===0) continue;
+      if(grid[nr][nc]===3&&!doorOpen) continue;
+      visited[nr][nc]=true; parent[nr][nc]=[r,c]; q.push([nr,nc]);
     }
   }
   return [];
 }
 
-function drawTile(r, c) {
-  const x = c * TILE;
-  const y = r * TILE;
-  const tile = mapData[r][c];
-  if (tile === 0) {
-    ctx.fillStyle = COLORS.wallEdge;
-    ctx.fillRect(x, y, TILE, TILE);
-    ctx.fillStyle = COLORS.wall;
-    ctx.fillRect(x+1, y+1, TILE-2, TILE-2);
+// Manhattan distance
+function dist(ar,ac,br,bc){return Math.abs(ar-br)+Math.abs(ac-bc);}
+
+let mapData, player, oni, collectedKeys, keyItems, doorOpen, moveTimer, oniMoveTimer, shakeTimer, gameResult, graceTimer, state, pressedKeys;
+
+function initGame() {
+  pressedKeys = new Set();
+  mapData = generateMaze();
+
+  const floors = reachable(mapData,1,1).filter(([r,c])=>mapData[r][c]===1);
+
+  // Player at (1,1)
+  player = {r:1,c:1,x:TILE,y:TILE};
+
+  // Oni: farthest reachable cell from player
+  let oniCell = floors.reduce((best,cell)=>dist(cell[0],cell[1],1,1)>dist(best[0],best[1],1,1)?cell:best, floors[0]);
+  oni = {r:oniCell[0],c:oniCell[1],x:oniCell[1]*TILE,y:oniCell[0]*TILE};
+
+  // Keys: 3 cells that are far from player and spread out
+  const candidates = floors.filter(([r,c])=>dist(r,c,1,1)>4&&!(r===oniCell[0]&&c===oniCell[1]));
+  candidates.sort(()=>Math.random()-0.5);
+  const keyPos = [];
+  for(const cell of candidates){
+    if(keyPos.every(k=>dist(k[0],k[1],cell[0],cell[1])>5)){
+      keyPos.push(cell);
+      if(keyPos.length===3) break;
+    }
+  }
+  // fallback if not enough spread
+  while(keyPos.length<3) keyPos.push(candidates[keyPos.length]||floors[floors.length-1-keyPos.length]);
+
+  keyItems = keyPos.map(([r,c])=>({r,c,collected:false}));
+  collectedKeys=0; doorOpen=false; moveTimer=0; oniMoveTimer=0;
+  shakeTimer=0; gameResult=''; graceTimer=4.0; state='playing';
+  msg.innerHTML='';
+  itemCountEl.textContent='鍵: 0/3';
+  statusEl.textContent='洋館から脱出せよ！';
+}
+
+function drawTile(r,c){
+  const x=c*TILE,y=r*TILE,tile=mapData[r][c];
+  if(tile===0){
+    ctx.fillStyle='#0d0d1a'; ctx.fillRect(x,y,TILE,TILE);
+    ctx.fillStyle='#1a1a2e'; ctx.fillRect(x+1,y+1,TILE-2,TILE-2);
+    // brick texture hint
+    if(r%2===0&&c%3===0){ctx.fillStyle='rgba(255,255,255,0.02)';ctx.fillRect(x+2,y+2,TILE-4,6);}
   } else {
-    ctx.fillStyle = COLORS.floor;
-    ctx.fillRect(x, y, TILE, TILE);
-    ctx.fillStyle = 'rgba(255,255,255,0.02)';
-    if ((r+c)%2===0) ctx.fillRect(x, y, TILE, TILE);
-    if (tile === 3) {
-      ctx.fillStyle = doorOpen ? COLORS.doorOpen : COLORS.door;
-      ctx.fillRect(x+4, y+4, TILE-8, TILE-8);
-      if (!doorOpen) {
-        ctx.fillStyle = '#ffd700';
-        ctx.fillRect(x+TILE/2-3, y+TILE/2-3, 6, 6);
-      }
+    ctx.fillStyle='#16213e'; ctx.fillRect(x,y,TILE,TILE);
+    if((r+c)%2===0){ctx.fillStyle='rgba(255,255,255,0.015)';ctx.fillRect(x,y,TILE,TILE);}
+    if(tile===3){
+      ctx.fillStyle=doorOpen?'#2a4a1a':'#7a5a10';
+      ctx.fillRect(x+3,y+3,TILE-6,TILE-6);
+      if(!doorOpen){ctx.fillStyle='#ffd700';ctx.fillRect(x+TILE/2-3,y+TILE/2-3,6,6);}
+      else{ctx.fillStyle='rgba(60,180,60,0.3)';ctx.fillRect(x,y,TILE,TILE);}
     }
   }
 }
 
-function drawPlayer() {
-  const x = player.x + TILE/2;
-  const y = player.y + TILE/2;
-  ctx.fillStyle = COLORS.playerBody;
-  ctx.fillRect(x-7, y-12, 14, 20);
-  ctx.fillStyle = COLORS.player;
-  ctx.beginPath();
-  ctx.arc(x, y-14, 8, 0, Math.PI*2);
-  ctx.fill();
-  ctx.fillStyle = '#222';
-  ctx.fillRect(x-4, y-15, 3, 3);
-  ctx.fillRect(x+1, y-15, 3, 3);
-  ctx.fillStyle = '#555';
-  ctx.fillRect(x-3, y-11, 6, 1);
+function drawPlayer(){
+  const x=player.x+TILE/2,y=player.y+TILE/2;
+  ctx.fillStyle='#b08850';ctx.fillRect(x-7,y-10,14,18);
+  ctx.fillStyle='#e8c97e';ctx.beginPath();ctx.arc(x,y-13,8,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='#222';ctx.fillRect(x-4,y-14,3,3);ctx.fillRect(x+1,y-14,3,3);
+  ctx.fillStyle='#664';ctx.fillRect(x-3,y-10,6,1);
 }
 
-function drawOni() {
-  const x = oni.x + TILE/2;
-  const y = oni.y + TILE/2;
-  const bob = Math.sin(Date.now()/200) * 2;
-  ctx.fillStyle = COLORS.oniDark;
-  ctx.beginPath();
-  ctx.ellipse(x, y+bob+2, 11, 14, 0, 0, Math.PI*2);
-  ctx.fill();
-  ctx.fillStyle = COLORS.oni;
-  ctx.beginPath();
-  ctx.ellipse(x, y+bob, 10, 12, 0, 0, Math.PI*2);
-  ctx.fill();
-  ctx.fillStyle = COLORS.oniEye;
-  ctx.fillRect(x-5, y+bob-5, 4, 4);
-  ctx.fillRect(x+1, y+bob-5, 4, 4);
-  ctx.fillStyle = 'rgba(0,0,0,0.8)';
-  ctx.fillRect(x-4, y+bob-4, 2, 2);
-  ctx.fillRect(x+2, y+bob-4, 2, 2);
-  ctx.fillStyle = COLORS.oni;
-  ctx.fillRect(x-3, y+bob+3, 6, 2);
-  // horns
-  ctx.fillStyle = '#2233aa';
-  ctx.beginPath(); ctx.moveTo(x-6, y+bob-9); ctx.lineTo(x-9, y+bob-17); ctx.lineTo(x-2, y+bob-10); ctx.closePath(); ctx.fill();
-  ctx.beginPath(); ctx.moveTo(x+6, y+bob-9); ctx.lineTo(x+9, y+bob-17); ctx.lineTo(x+2, y+bob-10); ctx.closePath(); ctx.fill();
+function drawOni(graceLeft){
+  const x=oni.x+TILE/2,y=oni.y+TILE/2;
+  const bob=Math.sin(Date.now()/200)*2;
+  ctx.globalAlpha=graceLeft>0?0.45+0.25*Math.sin(Date.now()/300):1.0;
+  ctx.fillStyle='#1a2e88';ctx.beginPath();ctx.ellipse(x,y+bob+2,11,14,0,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='#4488ff';ctx.beginPath();ctx.ellipse(x,y+bob,10,12,0,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='#fff';ctx.fillRect(x-5,y+bob-5,4,4);ctx.fillRect(x+1,y+bob-5,4,4);
+  ctx.fillStyle='rgba(0,0,0,0.9)';ctx.fillRect(x-4,y+bob-4,2,2);ctx.fillRect(x+2,y+bob-4,2,2);
+  ctx.fillStyle='#2233aa';
+  ctx.beginPath();ctx.moveTo(x-6,y+bob-9);ctx.lineTo(x-9,y+bob-17);ctx.lineTo(x-2,y+bob-10);ctx.closePath();ctx.fill();
+  ctx.beginPath();ctx.moveTo(x+6,y+bob-9);ctx.lineTo(x+9,y+bob-17);ctx.lineTo(x+2,y+bob-10);ctx.closePath();ctx.fill();
+  ctx.globalAlpha=1.0;
+  if(graceLeft>0){
+    ctx.fillStyle='rgba(120,160,255,0.85)';
+    ctx.font='bold 10px monospace';
+    ctx.textAlign='center';
+    ctx.fillText(Math.ceil(graceLeft)+'秒後に動く',x,y+bob-22);
+  }
 }
 
-function drawKeys() {
-  keyItems.forEach(k => {
-    if (k.collected) return;
-    const x = k.c * TILE + TILE/2;
-    const y = k.r * TILE + TILE/2;
-    const bob = Math.sin(Date.now()/400 + k.c) * 3;
-    ctx.fillStyle = COLORS.key;
-    ctx.beginPath();
-    ctx.arc(x, y+bob-4, 5, 0, Math.PI*2);
-    ctx.fill();
-    ctx.fillStyle = '#aa8800';
-    ctx.fillRect(x-1, y+bob, 2, 7);
-    ctx.fillRect(x+1, y+bob+2, 3, 2);
-    ctx.fillRect(x+1, y+bob+5, 3, 2);
-    // glow
-    ctx.fillStyle = 'rgba(255,215,0,0.15)';
-    ctx.beginPath();
-    ctx.arc(x, y+bob, 10, 0, Math.PI*2);
-    ctx.fill();
+function drawKeys(){
+  keyItems.forEach(k=>{
+    if(k.collected) return;
+    const x=k.c*TILE+TILE/2,y=k.r*TILE+TILE/2;
+    const bob=Math.sin(Date.now()/400+k.c)*3;
+    ctx.fillStyle='rgba(255,215,0,0.18)';ctx.beginPath();ctx.arc(x,y+bob,12,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#ffd700';ctx.beginPath();ctx.arc(x,y+bob-5,5,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#aa8800';ctx.fillRect(x-1,y+bob,2,7);ctx.fillRect(x+1,y+bob+2,3,2);ctx.fillRect(x+1,y+bob+5,3,2);
   });
 }
 
-function drawFog() {
-  const px = player.x + TILE/2;
-  const py = player.y + TILE/2;
-  const grd = ctx.createRadialGradient(px, py, 40, px, py, 200);
-  grd.addColorStop(0, 'rgba(0,0,0,0)');
-  grd.addColorStop(0.6, 'rgba(0,0,5,0.3)');
-  grd.addColorStop(1, 'rgba(0,0,5,0.92)');
-  ctx.fillStyle = grd;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+function drawFog(){
+  const px=player.x+TILE/2,py=player.y+TILE/2;
+  const grd=ctx.createRadialGradient(px,py,55,px,py,230);
+  grd.addColorStop(0,'rgba(0,0,0,0)');
+  grd.addColorStop(0.5,'rgba(0,0,5,0.2)');
+  grd.addColorStop(1,'rgba(0,0,5,0.93)');
+  ctx.fillStyle=grd;ctx.fillRect(0,0,canvas.width,canvas.height);
 }
 
-function update(dt) {
-  if (state !== 'playing') return;
-
-  let dx = 0, dy = 0;
-  if (keys.has('ArrowLeft') || keys.has('a') || keys.has('A')) dx = -1;
-  if (keys.has('ArrowRight') || keys.has('d') || keys.has('D')) dx = 1;
-  if (keys.has('ArrowUp') || keys.has('w') || keys.has('W')) dy = -1;
-  if (keys.has('ArrowDown') || keys.has('s') || keys.has('S')) dy = 1;
-
-  moveTimer += dt;
-  if (moveTimer >= 0.12 && (dx || dy)) {
-    moveTimer = 0;
-    const nr = player.r + dy;
-    const nc = player.c + dx;
-    if (!isWall(nr, nc)) {
-      player.r = nr;
-      player.c = nc;
-      player.x = nc * TILE;
-      player.y = nr * TILE;
-    }
-  }
-
-  // Pick up keys
-  keyItems.forEach(k => {
-    if (!k.collected && k.r === player.r && k.c === player.c) {
-      k.collected = true;
-      collectedKeys++;
-      itemCountEl.textContent = `鍵: ${collectedKeys}/3`;
-      if (collectedKeys >= 3) {
-        doorOpen = true;
-        statusEl.textContent = '出口の鍵が全部揃った！ドアが開いた！';
-      } else {
-        statusEl.textContent = `鍵を拾った！(${collectedKeys}/3)`;
-      }
-    }
-  });
-
-  // Check door escape
-  if (player.r === 13 && player.c === 13 && doorOpen) {
-    state = 'win';
-    gameResult = 'win';
-    showResult();
-    return;
-  }
-
-  // Move oni
-  oniMoveTimer += dt;
-  const oniDelay = Math.max(0.25, 0.55 - collectedKeys * 0.05);
-  if (oniMoveTimer >= oniDelay) {
-    oniMoveTimer = 0;
-    const path = bfsPath(oni.r, oni.c, player.r, player.c);
-    if (path.length > 1) {
-      oni.r = path[1][0];
-      oni.c = path[1][1];
-      oni.x = oni.c * TILE;
-      oni.y = oni.r * TILE;
-    }
-  }
-
-  // Check caught
-  if (oni.r === player.r && oni.c === player.c) {
-    state = 'dead';
-    shakeTimer = 0.5;
-    showResult();
-  }
-
-  if (shakeTimer > 0) shakeTimer -= dt;
-}
-
-function showResult() {
-  if (gameResult === 'win') {
-    msg.innerHTML = `<div style="background:rgba(0,20,0,0.85);border:1px solid #3a6;padding:20px 30px;border-radius:8px;color:#7fa">
+function showResult(){
+  if(gameResult==='win'){
+    msg.innerHTML=`<div style="background:rgba(0,20,0,0.92);border:1px solid #3a6;padding:20px 30px;border-radius:8px;color:#7fa">
       <div style="font-size:22px;font-weight:bold;margin-bottom:8px;">🎉 脱出成功！</div>
       <div style="font-size:13px;color:#5a8;margin-bottom:14px;">洋館から無事に逃げ出した...</div>
-      <button onclick="resetGame()" style="background:#1a4a2a;color:#7fa;border:1px solid #3a6;padding:8px 20px;cursor:pointer;font-family:monospace;font-size:13px;border-radius:4px;">もう一度</button>
+      <button onclick="window.resetGame()" style="background:#1a4a2a;color:#7fa;border:1px solid #3a6;padding:8px 20px;cursor:pointer;font-family:monospace;font-size:13px;border-radius:4px;margin-right:8px;">もう一度</button>
     </div>`;
   } else {
-    msg.innerHTML = `<div style="background:rgba(20,0,0,0.88);border:1px solid #a33;padding:20px 30px;border-radius:8px;color:#f88">
+    msg.innerHTML=`<div style="background:rgba(20,0,0,0.92);border:1px solid #a33;padding:20px 30px;border-radius:8px;color:#f88">
       <div style="font-size:22px;font-weight:bold;margin-bottom:8px;">💀 捕まった...</div>
       <div style="font-size:13px;color:#a66;margin-bottom:14px;">青鬼に追いつかれてしまった。</div>
-      <button onclick="resetGame()" style="background:#3a0a0a;color:#f88;border:1px solid #a33;padding:8px 20px;cursor:pointer;font-family:monospace;font-size:13px;border-radius:4px;">もう一度</button>
+      <button onclick="window.resetGame()" style="background:#3a0a0a;color:#f88;border:1px solid #a33;padding:8px 20px;cursor:pointer;font-family:monospace;font-size:13px;border-radius:4px;">もう一度</button>
     </div>`;
   }
 }
 
-function resetGame() {
-  player = { r: 1, c: 1, x: TILE, y: TILE };
-  oni = { r: oniStart.r, c: oniStart.c, x: oniStart.c*TILE, y: oniStart.r*TILE };
-  collectedKeys = 0;
-  keyItems = keyPositions.map(p => ({...p, collected: false}));
-  doorOpen = false;
-  moveTimer = 0;
-  oniMoveTimer = 0;
-  state = 'playing';
-  gameResult = '';
-  msg.innerHTML = '';
-  itemCountEl.textContent = '鍵: 0/3';
-  statusEl.textContent = '洋館から脱出せよ！';
-}
+let last=null;
+function loop(ts){
+  if(!last) last=ts;
+  const dt=Math.min((ts-last)/1000,0.1);
+  last=ts;
 
-function draw() {
-  ctx.fillStyle = '#000';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  if(state==='playing'){
+    if(graceTimer>0){
+      graceTimer=Math.max(0,graceTimer-dt);
+      if(graceTimer>0) statusEl.textContent=`青鬼が動き出すまで ${Math.ceil(graceTimer)} 秒！急げ！`;
+      else statusEl.textContent=doorOpen?'出口へ急げ！':'鍵を集めて脱出しろ！';
+    }
 
-  const shakeX = state === 'dead' && shakeTimer > 0 ? (Math.random()-0.5)*8 : 0;
-  const shakeY = state === 'dead' && shakeTimer > 0 ? (Math.random()-0.5)*8 : 0;
-  ctx.save();
-  ctx.translate(shakeX, shakeY);
+    let dx=0,dy=0;
+    if(pressedKeys.has('ArrowLeft')||pressedKeys.has('a')||pressedKeys.has('A')) dx=-1;
+    if(pressedKeys.has('ArrowRight')||pressedKeys.has('d')||pressedKeys.has('D')) dx=1;
+    if(pressedKeys.has('ArrowUp')||pressedKeys.has('w')||pressedKeys.has('W')) dy=-1;
+    if(pressedKeys.has('ArrowDown')||pressedKeys.has('s')||pressedKeys.has('S')) dy=1;
 
-  for (let r = 0; r < ROWS; r++)
-    for (let c = 0; c < COLS; c++)
-      drawTile(r, c);
+    moveTimer+=dt;
+    if(moveTimer>=0.1&&(dx||dy)){
+      moveTimer=0;
+      const nr=player.r+dy,nc=player.c+dx;
+      if(nr>=0&&nr<ROWS&&nc>=0&&nc<COLS&&mapData[nr][nc]!==0&&!(mapData[nr][nc]===3&&!doorOpen)){
+        player.r=nr;player.c=nc;player.x=nc*TILE;player.y=nr*TILE;
+      }
+    }
 
+    keyItems.forEach(k=>{
+      if(!k.collected&&k.r===player.r&&k.c===player.c){
+        k.collected=true;collectedKeys++;
+        itemCountEl.textContent=`鍵: ${collectedKeys}/3`;
+        if(collectedKeys>=3){doorOpen=true;statusEl.textContent='🔓 出口が開いた！右下のドアへ走れ！';}
+        else statusEl.textContent=`🗝 鍵を拾った！(${collectedKeys}/3)`;
+      }
+    });
+
+    if(player.r===ROWS-2&&player.c===COLS-2&&doorOpen){
+      state='win';gameResult='win';showResult();
+      requestAnimationFrame(loop);return;
+    }
+
+    if(graceTimer<=0){
+      oniMoveTimer+=dt;
+      const oniDelay=Math.max(0.45,0.75-collectedKeys*0.07);
+      if(oniMoveTimer>=oniDelay){
+        oniMoveTimer=0;
+        const path=bfsPath(mapData,doorOpen,oni.r,oni.c,player.r,player.c);
+        if(path.length>1){oni.r=path[1][0];oni.c=path[1][1];oni.x=oni.c*TILE;oni.y=oni.r*TILE;}
+      }
+    }
+
+    if(oni.r===player.r&&oni.c===player.c){
+      state='dead';gameResult='dead';shakeTimer=0.6;showResult();
+    }
+    if(shakeTimer>0) shakeTimer-=dt;
+  }
+
+  ctx.fillStyle='#000';ctx.fillRect(0,0,canvas.width,canvas.height);
+  const sx=state==='dead'&&shakeTimer>0?(Math.random()-0.5)*10:0;
+  const sy=state==='dead'&&shakeTimer>0?(Math.random()-0.5)*10:0;
+  ctx.save();ctx.translate(sx,sy);
+  for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++) drawTile(r,c);
   drawKeys();
   drawPlayer();
-  drawOni();
+  drawOni(graceTimer);
   drawFog();
-
   ctx.restore();
+  if(state==='dead'&&shakeTimer<=0){ctx.fillStyle='rgba(80,0,0,0.5)';ctx.fillRect(0,0,canvas.width,canvas.height);}
 
-  if (state === 'dead' && shakeTimer <= 0) {
-    ctx.fillStyle = 'rgba(80,0,0,0.5)';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-  }
-}
-
-let last = null;
-function loop(ts) {
-  if (!last) last = ts;
-  const dt = Math.min((ts - last) / 1000, 0.1);
-  last = ts;
-  update(dt);
-  draw();
   requestAnimationFrame(loop);
 }
 
-document.addEventListener('keydown', e => {
-  keys.add(e.key);
-  if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) e.preventDefault();
-});
-document.addEventListener('keyup', e => keys.delete(e.key));
+initGame();
 
-// Touch / mobile D-pad
-const dpad = document.createElement('div');
-dpad.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:4px;margin-top:10px;';
-dpad.innerHTML = `
-  <button id="up" style="width:44px;height:44px;background:#222;color:#aaa;border:1px solid #444;border-radius:6px;font-size:18px;cursor:pointer;">▲</button>
+document.addEventListener('keydown',e=>{
+  pressedKeys.add(e.key);
+  if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
+});
+document.addEventListener('keyup',e=>pressedKeys.delete(e.key));
+
+// D-pad
+const dpad=document.createElement('div');
+dpad.style.cssText='display:flex;flex-direction:column;align-items:center;gap:4px;margin-top:10px;';
+dpad.innerHTML=`
+  <button id="up" style="width:48px;height:48px;background:#1a1a2e;color:#8af;border:1px solid #334;border-radius:8px;font-size:20px;cursor:pointer;touch-action:none;">▲</button>
   <div style="display:flex;gap:4px;">
-    <button id="left" style="width:44px;height:44px;background:#222;color:#aaa;border:1px solid #444;border-radius:6px;font-size:18px;cursor:pointer;">◀</button>
-    <button id="down" style="width:44px;height:44px;background:#222;color:#aaa;border:1px solid #444;border-radius:6px;font-size:18px;cursor:pointer;">▼</button>
-    <button id="right" style="width:44px;height:44px;background:#222;color:#aaa;border:1px solid #444;border-radius:6px;font-size:18px;cursor:pointer;">▶</button>
+    <button id="left" style="width:48px;height:48px;background:#1a1a2e;color:#8af;border:1px solid #334;border-radius:8px;font-size:20px;cursor:pointer;touch-action:none;">◀</button>
+    <button id="down" style="width:48px;height:48px;background:#1a1a2e;color:#8af;border:1px solid #334;border-radius:8px;font-size:20px;cursor:pointer;touch-action:none;">▼</button>
+    <button id="right" style="width:48px;height:48px;background:#1a1a2e;color:#8af;border:1px solid #334;border-radius:8px;font-size:20px;cursor:pointer;touch-action:none;">▶</button>
   </div>`;
 document.getElementById('gameContainer').appendChild(dpad);
 
-[['up','ArrowUp'],['down','ArrowDown'],['left','ArrowLeft'],['right','ArrowRight']].forEach(([id, key]) => {
-  const btn = document.getElementById(id);
-  const press = () => keys.add(key);
-  const release = () => keys.delete(key);
-  btn.addEventListener('mousedown', press);
-  btn.addEventListener('mouseup', release);
-  btn.addEventListener('touchstart', e => { e.preventDefault(); press(); });
-  btn.addEventListener('touchend', e => { e.preventDefault(); release(); });
+[['up','ArrowUp'],['down','ArrowDown'],['left','ArrowLeft'],['right','ArrowRight']].forEach(([id,key])=>{
+  const btn=document.getElementById(id);
+  btn.addEventListener('mousedown',()=>pressedKeys.add(key));
+  btn.addEventListener('mouseup',()=>pressedKeys.delete(key));
+  btn.addEventListener('mouseleave',()=>pressedKeys.delete(key));
+  btn.addEventListener('touchstart',e=>{e.preventDefault();pressedKeys.add(key);});
+  btn.addEventListener('touchend',e=>{e.preventDefault();pressedKeys.delete(key);});
 });
 
-window.resetGame = resetGame;
+window.resetGame=()=>{initGame();last=null;};
 requestAnimationFrame(loop);
 </script>
