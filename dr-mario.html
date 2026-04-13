@@ -1,0 +1,930 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dr. ピル — Puzzle Game</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323:wght@400&display=swap');
+
+  :root {
+    --red:    #ff3c5f;
+    --blue:   #3ca8ff;
+    --yellow: #ffd93d;
+    --bg:     #0a0a1a;
+    --bottle: #0f1535;
+    --glass:  rgba(120,180,255,0.07);
+    --grid:   rgba(255,255,255,0.03);
+    --neon-r: 0 0 8px #ff3c5f, 0 0 20px #ff3c5f44;
+    --neon-b: 0 0 8px #3ca8ff, 0 0 20px #3ca8ff44;
+    --neon-y: 0 0 8px #ffd93d, 0 0 20px #ffd93d44;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    font-family: 'Press Start 2P', monospace;
+    overflow: hidden;
+    user-select: none;
+  }
+
+  /* Starfield */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      radial-gradient(1px 1px at 10% 20%, #fff6 0%, transparent 100%),
+      radial-gradient(1px 1px at 30% 80%, #fff4 0%, transparent 100%),
+      radial-gradient(1px 1px at 50% 40%, #fff5 0%, transparent 100%),
+      radial-gradient(1px 1px at 70% 10%, #fff3 0%, transparent 100%),
+      radial-gradient(1px 1px at 90% 60%, #fff6 0%, transparent 100%),
+      radial-gradient(1px 1px at 15% 55%, #fff4 0%, transparent 100%),
+      radial-gradient(1px 1px at 85% 35%, #fff5 0%, transparent 100%),
+      radial-gradient(1px 1px at 40% 90%, #fff3 0%, transparent 100%),
+      radial-gradient(1px 1px at 60% 70%, #fff4 0%, transparent 100%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  #app {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    gap: 24px;
+    align-items: flex-start;
+  }
+
+  /* Side panels */
+  .panel {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    min-width: 120px;
+  }
+
+  .panel-box {
+    background: #0d1430;
+    border: 2px solid #1e2a5e;
+    border-radius: 8px;
+    padding: 14px 12px;
+    text-align: center;
+  }
+
+  .panel-label {
+    font-size: 7px;
+    color: #4a6fa5;
+    letter-spacing: 1px;
+    margin-bottom: 8px;
+  }
+
+  .panel-value {
+    font-family: 'VT323', monospace;
+    font-size: 32px;
+    color: #fff;
+    line-height: 1;
+  }
+
+  /* Next pill preview */
+  #next-canvas {
+    display: block;
+    margin: 6px auto 0;
+    image-rendering: pixelated;
+  }
+
+  /* Level / speed */
+  .level-display {
+    font-family: 'VT323', monospace;
+    font-size: 38px;
+    color: var(--yellow);
+    text-shadow: var(--neon-y);
+  }
+
+  /* Virus count */
+  .virus-count {
+    font-family: 'VT323', monospace;
+    font-size: 38px;
+    color: var(--red);
+    text-shadow: var(--neon-r);
+  }
+
+  /* Main bottle */
+  #bottle-wrap {
+    position: relative;
+  }
+
+  #game-title {
+    font-size: 11px;
+    color: #fff;
+    text-align: center;
+    margin-bottom: 10px;
+    letter-spacing: 2px;
+    text-shadow: var(--neon-b);
+  }
+
+  #game-title span { color: var(--red); text-shadow: var(--neon-r); }
+
+  #bottle-outer {
+    position: relative;
+    background: linear-gradient(180deg, #090d20 0%, #0f1535 100%);
+    border: 3px solid #1e2a5e;
+    border-radius: 12px;
+    padding: 4px;
+    box-shadow:
+      0 0 0 1px #0a0e28,
+      inset 0 0 30px rgba(60,168,255,0.05),
+      0 8px 40px rgba(0,0,0,0.6);
+    overflow: hidden;
+  }
+
+  /* Glass shine */
+  #bottle-outer::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 50%;
+    background: linear-gradient(180deg, rgba(120,180,255,0.04) 0%, transparent 100%);
+    pointer-events: none;
+    z-index: 10;
+    border-radius: 9px 9px 0 0;
+  }
+
+  #game-canvas {
+    display: block;
+    image-rendering: pixelated;
+  }
+
+  /* Overlay screens */
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(5, 8, 20, 0.92);
+    border-radius: 9px;
+    z-index: 20;
+    gap: 18px;
+    padding: 20px;
+    text-align: center;
+  }
+
+  .overlay h1 {
+    font-size: 14px;
+    line-height: 1.8;
+    color: #fff;
+  }
+  .overlay h1 span.r { color: var(--red); }
+  .overlay h1 span.b { color: var(--blue); }
+  .overlay h1 span.y { color: var(--yellow); }
+
+  .overlay p {
+    font-size: 7px;
+    color: #6a8fd8;
+    line-height: 2;
+    max-width: 200px;
+  }
+
+  .btn {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 9px;
+    background: #1a2460;
+    border: 2px solid #3ca8ff;
+    color: #fff;
+    padding: 10px 20px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s;
+    letter-spacing: 1px;
+    box-shadow: var(--neon-b);
+    margin-top: 4px;
+  }
+  .btn:hover {
+    background: #243080;
+    transform: scale(1.04);
+    box-shadow: 0 0 16px #3ca8ff88, 0 0 40px #3ca8ff44;
+  }
+  .btn.danger {
+    border-color: var(--red);
+    box-shadow: var(--neon-r);
+  }
+  .btn.danger:hover { box-shadow: 0 0 16px #ff3c5f88; }
+
+  /* Controls hint */
+  #controls-hint {
+    position: absolute;
+    bottom: -56px;
+    left: 0; right: 0;
+    display: flex;
+    justify-content: center;
+    gap: 16px;
+    font-size: 6px;
+    color: #2a3a6a;
+  }
+
+  .key-hint { display: flex; align-items: center; gap: 5px; }
+  .key { 
+    background: #111828; 
+    border: 1px solid #2a3a6a; 
+    border-radius: 3px; 
+    padding: 2px 5px; 
+    color: #4a6fa5;
+    font-family: 'VT323', monospace;
+    font-size: 12px;
+  }
+
+  /* Flash animation */
+  @keyframes flash {
+    0%,100% { opacity: 1; }
+    50% { opacity: 0; }
+  }
+  .flashing { animation: flash 0.15s steps(1) infinite; }
+
+  /* Win glow */
+  @keyframes winGlow {
+    0%,100% { box-shadow: 0 0 20px #ffd93d44, 0 8px 40px rgba(0,0,0,0.6); }
+    50% { box-shadow: 0 0 40px #ffd93daa, 0 8px 40px rgba(0,0,0,0.6); }
+  }
+  .win-glow { animation: winGlow 0.8s ease-in-out infinite; }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- Left Panel -->
+  <div class="panel">
+    <div class="panel-box">
+      <div class="panel-label">SCORE</div>
+      <div class="panel-value" id="score-display">0</div>
+    </div>
+    <div class="panel-box">
+      <div class="panel-label">LEVEL</div>
+      <div class="level-display" id="level-display">1</div>
+    </div>
+    <div class="panel-box">
+      <div class="panel-label">NEXT</div>
+      <canvas id="next-canvas" width="64" height="32"></canvas>
+    </div>
+  </div>
+
+  <!-- Bottle -->
+  <div id="bottle-wrap">
+    <div id="game-title">Dr. <span>PIL</span>L</div>
+    <div id="bottle-outer">
+      <canvas id="game-canvas" width="192" height="336"></canvas>
+      <!-- Overlays injected by JS -->
+    </div>
+    <div id="controls-hint">
+      <div class="key-hint"><span class="key">←→</span> 移動</div>
+      <div class="key-hint"><span class="key">↑</span> 回転</div>
+      <div class="key-hint"><span class="key">↓</span> 落下</div>
+      <div class="key-hint"><span class="key">P</span> 一時停止</div>
+    </div>
+  </div>
+
+  <!-- Right Panel -->
+  <div class="panel">
+    <div class="panel-box">
+      <div class="panel-label">VIRUS</div>
+      <div class="virus-count" id="virus-display">0</div>
+    </div>
+    <div class="panel-box">
+      <div class="panel-label">HIGH</div>
+      <div class="panel-value" id="high-display">0</div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ============================================================
+// CONFIG
+// ============================================================
+const COLS = 8, ROWS = 14;
+const CS = 24; // cell size px
+const COLORS = ['red','blue','yellow'];
+const COLOR_MAP = { red:'#ff3c5f', blue:'#3ca8ff', yellow:'#ffd93d' };
+const GLOW_MAP  = { red:'rgba(255,60,95,0.6)', blue:'rgba(60,168,255,0.6)', yellow:'rgba(255,217,61,0.6)' };
+
+// Score per clear
+const SCORE_TABLE = { 1:100, 2:200, 3:400, 4:800, 5:1600, 6:3200 };
+
+// Drop intervals (ms) per level
+const SPEED = [800, 700, 600, 500, 400, 320, 260, 200, 160, 130, 100];
+
+// ============================================================
+// STATE
+// ============================================================
+const canvas    = document.getElementById('game-canvas');
+const ctx       = canvas.getContext('2d');
+const nextCvs   = document.getElementById('next-canvas');
+const nextCtx   = nextCvs.getContext('2d');
+
+let board = [];       // ROWS x COLS, each cell: null | {color, type}
+let pill  = null;     // current falling pill
+let nextPill = null;
+let score  = 0;
+let highScore = +localStorage.getItem('drpill_high') || 0;
+let level  = 1;
+let virusCount = 0;
+let gameState = 'start'; // start | playing | paused | gameover | win
+let dropTimer = 0;
+let lastTime  = 0;
+let animId    = null;
+let clearAnim = null;  // cells flashing before removal
+
+// ============================================================
+// BOARD
+// ============================================================
+function makeBoard() {
+  return Array.from({length: ROWS}, () => Array(COLS).fill(null));
+}
+
+function placeViruses(lvl) {
+  const count = 4 + lvl * 2;
+  let placed = 0;
+  const maxRow = ROWS - 1;
+  const minRow = Math.floor(ROWS / 2);
+  let attempts = 0;
+  while (placed < count && attempts < 500) {
+    attempts++;
+    const r = minRow + Math.floor(Math.random() * (maxRow - minRow + 1));
+    const c = Math.floor(Math.random() * COLS);
+    if (!board[r][c]) {
+      board[r][c] = { color: COLORS[Math.floor(Math.random()*3)], type:'virus' };
+      placed++;
+    }
+  }
+  return placed;
+}
+
+// ============================================================
+// PILL
+// ============================================================
+// pill segments: [{r,c,color,end:'L'|'R'|'U'|'D'|'single'}]
+function makePill() {
+  const c1 = COLORS[Math.floor(Math.random()*3)];
+  const c2 = COLORS[Math.floor(Math.random()*3)];
+  // spawn at top center, horizontal
+  const col = Math.floor(COLS/2) - 1;
+  return {
+    segs: [
+      {r:0, c:col,   color:c1, end:'L'},
+      {r:0, c:col+1, color:c2, end:'R'},
+    ],
+    rotation: 0 // 0=horiz,1=vert
+  };
+}
+
+// ============================================================
+// COLLISION
+// ============================================================
+function inBounds(r,c) { return r>=0 && r<ROWS && c>=0 && c<COLS; }
+
+function cellFree(r,c) {
+  return inBounds(r,c) && !board[r][c];
+}
+
+function pillCanPlace(segs) {
+  return segs.every(s => cellFree(s.r, s.c));
+}
+
+// ============================================================
+// MOVEMENT
+// ============================================================
+function movePill(dr, dc) {
+  const newSegs = pill.segs.map(s => ({...s, r:s.r+dr, c:s.c+dc}));
+  if (pillCanPlace(newSegs)) { pill.segs = newSegs; return true; }
+  return false;
+}
+
+function rotatePill() {
+  // Rotate around the first segment
+  const [a, b] = pill.segs;
+  let newSegs;
+  if (pill.rotation === 0) {
+    // horizontal -> vertical: b goes above a
+    newSegs = [
+      {...a, end:'U'},
+      {r:a.r+1, c:a.c, color:b.color, end:'D'},
+    ];
+    if (pillCanPlace(newSegs)) { pill.segs = newSegs; pill.rotation = 1; return; }
+    // try shifting left
+    const shifted = newSegs.map(s => ({...s, c:s.c-1}));
+    if (pillCanPlace(shifted)) { pill.segs = shifted; pill.rotation = 1; return; }
+  } else {
+    // vertical -> horizontal: a stays, b goes right
+    newSegs = [
+      {...a, end:'L'},
+      {r:a.r, c:a.c+1, color:b.color, end:'R'},
+    ];
+    if (pillCanPlace(newSegs)) { pill.segs = newSegs; pill.rotation = 0; return; }
+    // try shifting left
+    const shifted = newSegs.map(s => ({...s, c:s.c-1}));
+    if (pillCanPlace(shifted)) { pill.segs = shifted; pill.rotation = 0; return; }
+  }
+}
+
+// ============================================================
+// LOCK & CLEAR
+// ============================================================
+function lockPill() {
+  for (const s of pill.segs) {
+    board[s.r][s.c] = {color: s.color, type:'pill', end: s.end};
+  }
+  pill = null;
+  processClears();
+}
+
+function findMatches() {
+  const marked = Array.from({length:ROWS}, ()=>Array(COLS).fill(false));
+
+  // Horizontal
+  for (let r=0; r<ROWS; r++) {
+    let run = 1;
+    for (let c=1; c<COLS; c++) {
+      const prev = board[r][c-1], cur = board[r][c];
+      if (cur && prev && cur.color === prev.color) { run++; }
+      else {
+        if (run >= 4) for (let k=c-run;k<c;k++) marked[r][k]=true;
+        run = 1;
+      }
+    }
+    if (run>=4) for (let k=COLS-run;k<COLS;k++) marked[r][k]=true;
+  }
+
+  // Vertical
+  for (let c=0; c<COLS; c++) {
+    let run=1;
+    for (let r=1; r<ROWS; r++) {
+      const prev=board[r-1][c], cur=board[r][c];
+      if (cur && prev && cur.color===prev.color) { run++; }
+      else {
+        if (run>=4) for (let k=r-run;k<r;k++) marked[k][c]=true;
+        run=1;
+      }
+    }
+    if (run>=4) for (let k=ROWS-run;k<ROWS;k++) marked[k][c]=true;
+  }
+
+  return marked;
+}
+
+let flashFrames = 0;
+let flashMarked = null;
+let pendingClearCallback = null;
+
+function processClears() {
+  const marked = findMatches();
+  const anyMarked = marked.some(row=>row.some(v=>v));
+
+  if (!anyMarked) {
+    // No clears — spawn next pill
+    spawnNext();
+    return;
+  }
+
+  // Count clears for score
+  let cleared = 0;
+  let virusCleared = 0;
+  for (let r=0;r<ROWS;r++)
+    for (let c=0;c<COLS;c++)
+      if (marked[r][c]) {
+        cleared++;
+        if (board[r][c] && board[r][c].type==='virus') virusCleared++;
+      }
+
+  const key = Math.min(cleared, 6);
+  score += (SCORE_TABLE[key] || 3200) + virusCleared * 300;
+  virusCount -= virusCleared;
+  updateUI();
+
+  // Flash then remove
+  flashMarked = marked;
+  flashFrames = 6;
+  pendingClearCallback = () => {
+    // Remove marked cells
+    for (let r=0;r<ROWS;r++)
+      for (let c=0;c<COLS;c++)
+        if (marked[r][c]) board[r][c] = null;
+    // Make half-pills into singles
+    fixOrphanedPills();
+    // Apply gravity
+    applyGravity(() => processClears());
+  };
+}
+
+function fixOrphanedPills() {
+  for (let r=0;r<ROWS;r++) {
+    for (let c=0;c<COLS;c++) {
+      const cell = board[r][c];
+      if (!cell || cell.type!=='pill') continue;
+      let orphan = false;
+      if (cell.end==='L' && (!board[r][c+1] || board[r][c+1].end!=='R')) orphan=true;
+      if (cell.end==='R' && (!board[r][c-1] || board[r][c-1].end!=='L')) orphan=true;
+      if (cell.end==='U' && (!board[r+1] || !board[r+1][c] || board[r+1][c].end!=='D')) orphan=true;
+      if (cell.end==='D' && (!board[r-1] || !board[r-1][c] || board[r-1][c].end!=='U')) orphan=true;
+      if (orphan) board[r][c] = {...cell, end:'single'};
+    }
+  }
+}
+
+function applyGravity(cb) {
+  // Drop single pill halves and vertical pairs
+  let moved = false;
+  for (let r=ROWS-2; r>=0; r--) {
+    for (let c=0;c<COLS;c++) {
+      const cell = board[r][c];
+      if (!cell || cell.type==='virus') continue;
+      if (cell.end==='single') {
+        if (!board[r+1][c]) {
+          board[r+1][c] = cell;
+          board[r][c] = null;
+          moved = true;
+        }
+      } else if (cell.end==='U') {
+        // vertical pair: check if both can fall
+        const top=cell, bot=board[r+1][c];
+        if (bot && bot.end==='D' && r+2<ROWS && !board[r+2][c]) {
+          board[r+2][c] = bot;
+          board[r+1][c] = top;
+          board[r][c]   = null;
+          moved = true;
+        }
+      }
+      // horizontal pairs handled via their L half
+      else if (cell.end==='L') {
+        const right = board[r][c+1];
+        if (right && right.end==='R' && r+1<ROWS && !board[r+1][c] && !board[r+1][c+1]) {
+          board[r+1][c]   = cell;
+          board[r+1][c+1] = right;
+          board[r][c]     = null;
+          board[r][c+1]   = null;
+          moved = true;
+        }
+      }
+    }
+  }
+  if (moved) setTimeout(() => applyGravity(cb), 60);
+  else cb();
+}
+
+function spawnNext() {
+  if (virusCount <= 0) { gameState='win'; drawOverlay(); return; }
+  pill = nextPill || makePill();
+  nextPill = makePill();
+  drawNextPill();
+  if (!pillCanPlace(pill.segs)) { gameState='gameover'; drawOverlay(); return; }
+}
+
+// ============================================================
+// DRAW
+// ============================================================
+function drawCell(cx, r, c, cell, alpha=1) {
+  const x = c*CS, y = r*CS;
+  const color = COLOR_MAP[cell.color];
+  const glow  = GLOW_MAP[cell.color];
+
+  cx.save();
+  cx.globalAlpha = alpha;
+
+  if (cell.type === 'virus') {
+    // Virus: spiky circle
+    cx.beginPath();
+    cx.arc(x+CS/2, y+CS/2, CS/2-3, 0, Math.PI*2);
+    cx.fillStyle = color;
+    cx.fill();
+    // spikes
+    cx.strokeStyle = '#fff4';
+    cx.lineWidth = 1;
+    for (let i=0;i<8;i++) {
+      const a = (i/8)*Math.PI*2;
+      cx.beginPath();
+      cx.moveTo(x+CS/2 + Math.cos(a)*(CS/2-3), y+CS/2 + Math.sin(a)*(CS/2-3));
+      cx.lineTo(x+CS/2 + Math.cos(a)*(CS/2),   y+CS/2 + Math.sin(a)*(CS/2));
+      cx.stroke();
+    }
+    // eyes
+    cx.fillStyle='#fff';
+    cx.beginPath(); cx.arc(x+CS/2-3, y+CS/2-2, 2, 0, Math.PI*2); cx.fill();
+    cx.beginPath(); cx.arc(x+CS/2+3, y+CS/2-2, 2, 0, Math.PI*2); cx.fill();
+    cx.fillStyle='#000';
+    cx.beginPath(); cx.arc(x+CS/2-3, y+CS/2-2, 1, 0, Math.PI*2); cx.fill();
+    cx.beginPath(); cx.arc(x+CS/2+3, y+CS/2-2, 1, 0, Math.PI*2); cx.fill();
+    // mouth
+    cx.beginPath();
+    cx.arc(x+CS/2, y+CS/2+2, 3, 0.2, Math.PI-0.2);
+    cx.strokeStyle='#fff';
+    cx.lineWidth=1;
+    cx.stroke();
+  } else {
+    // Pill half
+    const r2 = CS/2 - 2;
+    cx.fillStyle = color;
+    cx.shadowColor = glow;
+    cx.shadowBlur = 8;
+
+    if (cell.end === 'L') {
+      // left half of horizontal pill
+      cx.beginPath();
+      cx.arc(x+r2+2, y+CS/2, r2, Math.PI/2, Math.PI*3/2);
+      cx.lineTo(x+CS, y+CS/2-r2);
+      cx.lineTo(x+CS, y+CS/2+r2);
+      cx.closePath();
+      cx.fill();
+      // shine
+      cx.shadowBlur=0;
+      cx.fillStyle='rgba(255,255,255,0.2)';
+      cx.fillRect(x+4, y+4, CS/2-4, 4);
+    } else if (cell.end === 'R') {
+      cx.beginPath();
+      cx.arc(x+CS-r2-2, y+CS/2, r2, -Math.PI/2, Math.PI/2);
+      cx.lineTo(x, y+CS/2+r2);
+      cx.lineTo(x, y+CS/2-r2);
+      cx.closePath();
+      cx.fill();
+      cx.shadowBlur=0;
+      cx.fillStyle='rgba(255,255,255,0.2)';
+      cx.fillRect(x+CS/2, y+4, CS/2-4, 4);
+    } else if (cell.end === 'U') {
+      cx.beginPath();
+      cx.arc(x+CS/2, y+r2+2, r2, Math.PI, 0);
+      cx.lineTo(x+CS/2+r2, y+CS);
+      cx.lineTo(x+CS/2-r2, y+CS);
+      cx.closePath();
+      cx.fill();
+      cx.shadowBlur=0;
+      cx.fillStyle='rgba(255,255,255,0.2)';
+      cx.fillRect(x+4, y+4, CS-8, 4);
+    } else if (cell.end === 'D') {
+      cx.beginPath();
+      cx.arc(x+CS/2, y+CS-r2-2, r2, 0, Math.PI);
+      cx.lineTo(x+CS/2-r2, y);
+      cx.lineTo(x+CS/2+r2, y);
+      cx.closePath();
+      cx.fill();
+    } else {
+      // single
+      cx.beginPath();
+      cx.arc(x+CS/2, y+CS/2, r2, 0, Math.PI*2);
+      cx.fill();
+      cx.shadowBlur=0;
+      cx.fillStyle='rgba(255,255,255,0.2)';
+      cx.beginPath();
+      cx.arc(x+CS/2-2, y+CS/2-2, r2/2, 0, Math.PI*2);
+      cx.fill();
+    }
+  }
+  cx.restore();
+}
+
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Grid
+  ctx.strokeStyle='rgba(255,255,255,0.04)';
+  ctx.lineWidth=1;
+  for (let r=0;r<=ROWS;r++) {
+    ctx.beginPath(); ctx.moveTo(0,r*CS); ctx.lineTo(COLS*CS,r*CS); ctx.stroke();
+  }
+  for (let c=0;c<=COLS;c++) {
+    ctx.beginPath(); ctx.moveTo(c*CS,0); ctx.lineTo(c*CS,ROWS*CS); ctx.stroke();
+  }
+
+  // Board cells
+  for (let r=0;r<ROWS;r++) {
+    for (let c=0;c<COLS;c++) {
+      if (!board[r][c]) continue;
+      let alpha = 1;
+      if (flashMarked && flashMarked[r][c]) {
+        alpha = flashFrames % 2 === 0 ? 0.1 : 1;
+      }
+      drawCell(ctx, r, c, board[r][c], alpha);
+    }
+  }
+
+  // Ghost pill
+  if (pill && gameState==='playing') {
+    let ghost = JSON.parse(JSON.stringify(pill));
+    while(true) {
+      const t = ghost.segs.map(s=>({...s,r:s.r+1}));
+      if (pillCanPlace(t)) ghost.segs=t; else break;
+    }
+    for (const s of ghost.segs) {
+      ctx.save();
+      ctx.globalAlpha=0.18;
+      drawCell(ctx, s.r, s.c, {color:s.color,type:'pill',end:s.end});
+      ctx.restore();
+    }
+    // Current pill
+    for (const s of pill.segs) drawCell(ctx, s.r, s.c, {color:s.color,type:'pill',end:s.end});
+  }
+}
+
+function drawNextPill() {
+  nextCtx.clearRect(0,0,64,32);
+  if (!nextPill) return;
+  for (const s of nextPill.segs) {
+    drawCell(nextCtx, 0, s.c - nextPill.segs[0].c, {color:s.color,type:'pill',end:s.end});
+  }
+}
+
+function drawOverlay() {
+  // Remove existing overlay
+  const old = document.querySelector('.overlay');
+  if (old) old.remove();
+
+  const ov = document.createElement('div');
+  ov.className = 'overlay';
+  const outer = document.getElementById('bottle-outer');
+
+  if (gameState==='start') {
+    ov.innerHTML = `
+      <h1>Dr. <span class="r">P</span><span class="b">I</span><span class="y">L</span>L</h1>
+      <p>4つ同じ色を並べてウイルスを全滅させよう！</p>
+      <button class="btn" id="start-btn">START GAME</button>
+      <div style="font-size:6px;color:#2a3a6a;margin-top:4px;">
+        ←→ 移動 &nbsp; ↑ 回転 &nbsp; ↓ 落下
+      </div>
+    `;
+  } else if (gameState==='gameover') {
+    ov.innerHTML = `
+      <h1 style="color:var(--red)">GAME<br>OVER</h1>
+      <p style="color:#888">スコア: ${score.toLocaleString()}</p>
+      <button class="btn danger" id="retry-btn">RETRY</button>
+    `;
+  } else if (gameState==='win') {
+    outer.classList.add('win-glow');
+    ov.innerHTML = `
+      <h1><span class="y">STAGE</span><br><span class="b">CLEAR!</span></h1>
+      <p style="color:var(--yellow)">スコア: ${score.toLocaleString()}</p>
+      <button class="btn" id="next-btn">NEXT LEVEL</button>
+    `;
+  } else if (gameState==='paused') {
+    ov.innerHTML = `
+      <h1 style="color:var(--blue)">PAUSE</h1>
+      <button class="btn" id="resume-btn">RESUME</button>
+    `;
+  }
+
+  outer.appendChild(ov);
+
+  // Bind buttons
+  ov.querySelector('#start-btn')?.addEventListener('click', startGame);
+  ov.querySelector('#retry-btn')?.addEventListener('click', () => { score=0; level=1; startGame(); });
+  ov.querySelector('#next-btn')?.addEventListener('click', () => { level=Math.min(level+1,10); startGame(); });
+  ov.querySelector('#resume-btn')?.addEventListener('click', resumeGame);
+}
+
+// ============================================================
+// GAME LOOP
+// ============================================================
+function gameLoop(ts) {
+  if (gameState !== 'playing') return;
+  animId = requestAnimationFrame(gameLoop);
+
+  const dt = ts - lastTime;
+  lastTime = ts;
+
+  // Flash animation
+  if (flashMarked) {
+    flashFrames--;
+    if (flashFrames <= 0) {
+      const cb = pendingClearCallback;
+      flashMarked = null;
+      pendingClearCallback = null;
+      cb();
+    }
+  }
+
+  // Auto-drop
+  if (!flashMarked && pill) {
+    dropTimer += dt;
+    const speed = SPEED[Math.min(level-1, SPEED.length-1)];
+    if (dropTimer >= speed) {
+      dropTimer = 0;
+      if (!movePill(1, 0)) lockPill();
+    }
+  }
+
+  draw();
+}
+
+// ============================================================
+// INPUT
+// ============================================================
+let dasTimer = 0, dasActive = false, dasDir = 0;
+let keyState = {};
+
+document.addEventListener('keydown', e => {
+  if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)) e.preventDefault();
+
+  if (e.key === 'p' || e.key === 'P') {
+    if (gameState==='playing') { gameState='paused'; cancelAnimationFrame(animId); drawOverlay(); }
+    return;
+  }
+
+  if (gameState !== 'playing' || !pill || flashMarked) return;
+
+  if (e.key === 'ArrowLeft')  { movePill(0,-1); dasDir=-1; dasTimer=0; }
+  if (e.key === 'ArrowRight') { movePill(0,1);  dasDir=1;  dasTimer=0; }
+  if (e.key === 'ArrowUp')    rotatePill();
+  if (e.key === 'ArrowDown')  { if (!movePill(1,0)) lockPill(); dropTimer=0; }
+
+  keyState[e.key] = true;
+});
+
+document.addEventListener('keyup', e => {
+  keyState[e.key] = false;
+  if (e.key==='ArrowLeft'||e.key==='ArrowRight') dasDir=0;
+});
+
+// DAS (auto-repeat)
+setInterval(() => {
+  if (gameState!=='playing'||!pill||flashMarked) return;
+  if (keyState['ArrowLeft'])  { dasTimer+=16; if(dasTimer>150){movePill(0,-1);} }
+  else if (keyState['ArrowRight']) { dasTimer+=16; if(dasTimer>150){movePill(0,1);} }
+  else dasTimer=0;
+}, 16);
+
+// ============================================================
+// TOUCH controls
+// ============================================================
+let touchStart = null;
+canvas.addEventListener('touchstart', e => {
+  touchStart = {x: e.touches[0].clientX, y: e.touches[0].clientY};
+}, {passive:true});
+canvas.addEventListener('touchend', e => {
+  if (!touchStart || gameState!=='playing' || !pill || flashMarked) return;
+  const dx = e.changedTouches[0].clientX - touchStart.x;
+  const dy = e.changedTouches[0].clientY - touchStart.y;
+  const adx = Math.abs(dx), ady = Math.abs(dy);
+  if (adx < 10 && ady < 10) { rotatePill(); }
+  else if (adx > ady) { dx<0 ? movePill(0,-1) : movePill(0,1); }
+  else { dy>0 ? (movePill(1,0)||lockPill()) : rotatePill(); }
+  touchStart=null;
+}, {passive:true});
+
+// ============================================================
+// UI UPDATE
+// ============================================================
+function updateUI() {
+  document.getElementById('score-display').textContent = score.toLocaleString();
+  document.getElementById('level-display').textContent = level;
+  document.getElementById('virus-display').textContent = virusCount;
+  if (score > highScore) {
+    highScore = score;
+    localStorage.setItem('drpill_high', highScore);
+  }
+  document.getElementById('high-display').textContent = highScore.toLocaleString();
+}
+
+// ============================================================
+// GAME CONTROL
+// ============================================================
+function startGame() {
+  const old = document.querySelector('.overlay');
+  if (old) old.remove();
+  document.getElementById('bottle-outer').classList.remove('win-glow');
+
+  board = makeBoard();
+  virusCount = placeViruses(level);
+  pill = null;
+  nextPill = makePill();
+  flashMarked = null;
+  pendingClearCallback = null;
+  dropTimer = 0;
+  gameState = 'playing';
+
+  updateUI();
+  spawnNext();
+  drawNextPill();
+
+  cancelAnimationFrame(animId);
+  lastTime = performance.now();
+  animId = requestAnimationFrame(gameLoop);
+}
+
+function resumeGame() {
+  const old = document.querySelector('.overlay');
+  if (old) old.remove();
+  gameState = 'playing';
+  lastTime = performance.now();
+  animId = requestAnimationFrame(gameLoop);
+}
+
+// ============================================================
+// INIT
+// ============================================================
+updateUI();
+draw();
+drawOverlay();
+</script>
+</body>
+</html>
