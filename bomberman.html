@@ -281,19 +281,20 @@ function checkHits() {
 
 function moveEnt(e, dx, dy, skipBombCheck) {
   const m=7;
+  const curC=Math.round(e.px/TILE), curR=Math.round(e.py/TILE);
+  // 今立っているマスの爆弾は通り抜け可能（置いた直後に動けなくなるのを防ぐ）
+  const isBombPassable=(c,r)=>skipBombCheck||!hasBombAt(c,r)||(c===curC&&r===curR);
   if(dx!==0) {
     const nx=e.px+dx;
     const r1=Math.floor((e.py+m)/TILE), r2=Math.floor((e.py+TILE-m)/TILE);
     const col=dx>0?Math.floor((nx+TILE-m)/TILE):Math.floor((nx+m)/TILE);
-    const bombOk=skipBombCheck||(!hasBombAt(col,r1)&&!hasBombAt(col,r2));
-    if(isWalkable(col,r1)&&isWalkable(col,r2)&&bombOk) e.px=nx;
+    if(isWalkable(col,r1)&&isWalkable(col,r2)&&isBombPassable(col,r1)&&isBombPassable(col,r2)) e.px=nx;
   }
   if(dy!==0) {
     const ny=e.py+dy;
     const c1=Math.floor((e.px+m)/TILE), c2=Math.floor((e.px+TILE-m)/TILE);
     const row=dy>0?Math.floor((ny+TILE-m)/TILE):Math.floor((ny+m)/TILE);
-    const bombOk=skipBombCheck||(!hasBombAt(c1,row)&&!hasBombAt(c2,row));
-    if(isWalkable(c1,row)&&isWalkable(c2,row)&&bombOk) e.py=ny;
+    if(isWalkable(c1,row)&&isWalkable(c2,row)&&isBombPassable(c1,row)&&isBombPassable(c2,row)) e.py=ny;
   }
   e.x=Math.round(e.px/TILE); e.y=Math.round(e.py/TILE);
 }
