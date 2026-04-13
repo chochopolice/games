@@ -1,154 +1,188 @@
 
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
-#gameContainer { display:flex; flex-direction:column; align-items:center; padding:1rem 0; font-family:var(--font-mono,monospace); }
+#gc { display:flex; flex-direction:column; align-items:center; padding:.8rem 0; font-family:var(--font-mono,monospace); }
 #canvas { border:2px solid #333; display:block; image-rendering:pixelated; }
-#ui { color:#aaa; font-size:13px; margin-top:8px; text-align:center; line-height:1.8; }
-#canvasWrap { position:relative; display:inline-block; }
-#message { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); text-align:center; pointer-events:none; z-index:10; min-width:220px; }
+#ui { color:#aaa; font-size:12px; margin-top:6px; text-align:center; line-height:1.9; }
+#cw { position:relative; display:inline-block; }
+#overlay { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); text-align:center; pointer-events:none; z-index:10; min-width:230px; }
 </style>
-<div id="gameContainer">
-  <div id="canvasWrap">
+<div id="gc">
+  <div id="cw">
     <canvas id="canvas" width="480" height="480"></canvas>
-    <div id="message"></div>
+    <div id="overlay"></div>
   </div>
   <div id="ui">
     <span>移動: WASD / 矢印キー</span> &nbsp;|&nbsp;
-    <span id="itemCount">鍵: 0/3</span> &nbsp;|&nbsp;
-    <span id="status">洋館から脱出せよ！</span>
+    <span id="ic">鍵: 0/3</span> &nbsp;|&nbsp;
+    <span id="st">洋館から脱出せよ！</span>
   </div>
 </div>
 <script>
-const canvas = document.getElementById('canvas');
-const ctx = canvas.getContext('2d');
-const msg = document.getElementById('message');
-const itemCountEl = document.getElementById('itemCount');
-const statusEl = document.getElementById('status');
+const canvas=document.getElementById('canvas');
+const ctx=canvas.getContext('2d');
+const overlay=document.getElementById('overlay');
+const icEl=document.getElementById('ic');
+const stEl=document.getElementById('st');
+const TILE=32,COLS=15,ROWS=15;
 
-const TILE = 32;
-const COLS = 15;
-const ROWS = 15;
-
-// ---- Maze generation (Recursive Backtracker) ----
-// Cells at odd (r,c), walls between cells at even coords
-function generateMaze() {
-  const grid = Array.from({length:ROWS}, ()=>new Array(COLS).fill(0));
-
-  // All odd-coord cells become floor
-  function carve(r, c) {
-    grid[r][c] = 1;
-    const dirs = [[0,2],[0,-2],[2,0],[-2,0]].sort(()=>Math.random()-0.5);
-    for (const [dr,dc] of dirs) {
-      const nr = r+dr, nc = c+dc;
-      if (nr>0&&nr<ROWS-1&&nc>0&&nc<COLS-1&&grid[nr][nc]===0) {
-        grid[r+dr/2][c+dc/2] = 1; // knock down wall between
-        carve(nr, nc);
+// ---- 迷路生成（再帰バックトラッカー + 追加壁破壊でループ作成）----
+function generateMaze(){
+  const g=Array.from({length:ROWS},()=>new Array(COLS).fill(0));
+  function carve(r,c){
+    g[r][c]=1;
+    const dirs=[[0,2],[0,-2],[2,0],[-2,0]].sort(()=>Math.random()-.5);
+    for(const[dr,dc]of dirs){
+      const nr=r+dr,nc=c+dc;
+      if(nr>0&&nr<ROWS-1&&nc>0&&nc<COLS-1&&g[nr][nc]===0){
+        g[r+dr/2][c+dc/2]=1; carve(nr,nc);
       }
     }
   }
-  carve(1, 1);
-
-  // Door at bottom-right cell
-  grid[ROWS-2][COLS-2] = 3;
-  return grid;
+  carve(1,1);
+  // 壁を追加で破壊してループ・広い空間を作る（難易度調整の核心）
+  for(let pass=0;pass<3;pass++){
+    for(let r=1;r<ROWS-1;r++){
+      for(let c=1;c<COLS-1;c++){
+        if(g[r][c]===0&&Math.random()<0.42){
+          const adj=[[r-1,c],[r+1,c],[r,c-1],[r,c+1]].filter(([nr,nc])=>g[nr][nc]===1).length;
+          if(adj>=2) g[r][c]=1;
+        }
+      }
+    }
+  }
+  g[ROWS-2][COLS-2]=3;
+  return g;
 }
 
-// BFS to find all reachable floor cells from (r,c)
-function reachable(grid, r, c) {
-  const visited = Array.from({length:ROWS},()=>new Array(COLS).fill(false));
-  const q = [[r,c]]; visited[r][c]=true; const cells=[];
-  const dirs=[[0,1],[0,-1],[1,0],[-1,0]];
-  while(q.length) {
-    const [cr,cc]=q.shift(); cells.push([cr,cc]);
-    for(const[dr,dc]of dirs){
-      const nr=cr+dr,nc=cc+dc;
-      if(nr<0||nr>=ROWS||nc<0||nc>=COLS) continue;
-      if(visited[nr][nc]) continue;
-      if(grid[nr][nc]===0) continue;
-      visited[nr][nc]=true; q.push([nr,nc]);
+// ---- 到達可能セル ----
+function reachable(g,sr,sc){
+  const vis=Array.from({length:ROWS},()=>new Array(COLS).fill(false));
+  const q=[[sr,sc]],cells=[];
+  vis[sr][sc]=true;
+  const D=[[0,1],[0,-1],[1,0],[-1,0]];
+  while(q.length){
+    const[r,c]=q.shift();cells.push([r,c]);
+    for(const[dr,dc]of D){
+      const nr=r+dr,nc=c+dc;
+      if(nr<0||nr>=ROWS||nc<0||nc>=COLS||vis[nr][nc]||g[nr][nc]===0) continue;
+      vis[nr][nc]=true;q.push([nr,nc]);
     }
   }
   return cells;
 }
 
-function bfsPath(grid, doorOpen, fromR, fromC, toR, toC) {
-  const visited=Array.from({length:ROWS},()=>new Array(COLS).fill(false));
-  const parent=Array.from({length:ROWS},()=>new Array(COLS).fill(null));
-  const q=[[fromR,fromC]]; visited[fromR][fromC]=true;
-  const dirs=[[0,1],[0,-1],[1,0],[-1,0]];
+// ---- BFS ----
+function bfs(g,doorOpen,fr,fc,tr,tc){
+  const vis=Array.from({length:ROWS},()=>new Array(COLS).fill(false));
+  const par=Array.from({length:ROWS},()=>new Array(COLS).fill(null));
+  const q=[[fr,fc]];vis[fr][fc]=true;
+  const D=[[0,1],[0,-1],[1,0],[-1,0]];
   while(q.length){
     const[r,c]=q.shift();
-    if(r===toR&&c===toC){
+    if(r===tr&&c===tc){
       let path=[[r,c]],cur=[r,c];
-      while(parent[cur[0]][cur[1]]){cur=parent[cur[0]][cur[1]];path.unshift(cur);}
+      while(par[cur[0]][cur[1]]){cur=par[cur[0]][cur[1]];path.unshift(cur);}
       return path;
     }
-    for(const[dr,dc]of dirs){
+    for(const[dr,dc]of D){
       const nr=r+dr,nc=c+dc;
-      if(nr<0||nr>=ROWS||nc<0||nc>=COLS) continue;
-      if(visited[nr][nc]) continue;
-      if(grid[nr][nc]===0) continue;
-      if(grid[nr][nc]===3&&!doorOpen) continue;
-      visited[nr][nc]=true; parent[nr][nc]=[r,c]; q.push([nr,nc]);
+      if(nr<0||nr>=ROWS||nc<0||nc>=COLS||vis[nr][nc]||g[nr][nc]===0) continue;
+      if(g[nr][nc]===3&&!doorOpen) continue;
+      vis[nr][nc]=true;par[nr][nc]=[r,c];q.push([nr,nc]);
     }
   }
   return [];
 }
 
-// Manhattan distance
-function dist(ar,ac,br,bc){return Math.abs(ar-br)+Math.abs(ac-bc);}
-
-let mapData, player, oni, collectedKeys, keyItems, doorOpen, moveTimer, oniMoveTimer, shakeTimer, gameResult, graceTimer, state, pressedKeys;
-
-function initGame() {
-  pressedKeys = new Set();
-  mapData = generateMaze();
-
-  const floors = reachable(mapData,1,1).filter(([r,c])=>mapData[r][c]===1);
-
-  // Player at (1,1)
-  player = {r:1,c:1,x:TILE,y:TILE};
-
-  // Oni: farthest reachable cell from player
-  let oniCell = floors.reduce((best,cell)=>dist(cell[0],cell[1],1,1)>dist(best[0],best[1],1,1)?cell:best, floors[0]);
-  oni = {r:oniCell[0],c:oniCell[1],x:oniCell[1]*TILE,y:oniCell[0]*TILE};
-
-  // Keys: 3 cells that are far from player and spread out
-  const candidates = floors.filter(([r,c])=>dist(r,c,1,1)>4&&!(r===oniCell[0]&&c===oniCell[1]));
-  candidates.sort(()=>Math.random()-0.5);
-  const keyPos = [];
-  for(const cell of candidates){
-    if(keyPos.every(k=>dist(k[0],k[1],cell[0],cell[1])>5)){
-      keyPos.push(cell);
-      if(keyPos.length===3) break;
-    }
+// ---- 視線判定（レイキャスト）----
+const LOS_RANGE=9;
+function hasLOS(g,ar,ac,br,bc){
+  const dx=bc-ac,dy=br-ar;
+  const dist=Math.sqrt(dx*dx+dy*dy);
+  if(dist>LOS_RANGE) return false;
+  const steps=Math.ceil(dist*2);
+  for(let i=1;i<steps;i++){
+    const tr=ar+dy*(i/steps), tc=ac+dx*(i/steps);
+    const gr=Math.round(tr),gc=Math.round(tc);
+    if(gr===br&&gc===bc) break;
+    if(gr<0||gr>=ROWS||gc<0||gc>=COLS) return false;
+    if(g[gr][gc]===0) return false;
   }
-  // fallback if not enough spread
-  while(keyPos.length<3) keyPos.push(candidates[keyPos.length]||floors[floors.length-1-keyPos.length]);
-
-  keyItems = keyPos.map(([r,c])=>({r,c,collected:false}));
-  collectedKeys=0; doorOpen=false; moveTimer=0; oniMoveTimer=0;
-  shakeTimer=0; gameResult=''; graceTimer=4.0; state='playing';
-  msg.innerHTML='';
-  itemCountEl.textContent='鍵: 0/3';
-  statusEl.textContent='洋館から脱出せよ！';
+  return true;
 }
 
+let map,player,oni,collectedKeys,keyItems,doorOpen;
+let moveTimer,oniMoveTimer,shakeTimer,gameResult,graceTimer,state,pKeys;
+let oniMode,oniPatrolDir,oniPatrolTimer,alertFlash,detectedSound;
+
+function initGame(){
+  pKeys=new Set();
+  map=generateMaze();
+  const floors=reachable(map,1,1).filter(([r,c])=>map[r][c]===1);
+  player={r:1,c:1,x:TILE,y:TILE};
+
+  // 鬼は最遠点
+  const oc=floors.reduce((b,e)=>Math.abs(e[0]-1)+Math.abs(e[1]-1)>Math.abs(b[0]-1)+Math.abs(b[1]-1)?e:b,floors[0]);
+  oni={r:oc[0],c:oc[1],x:oc[1]*TILE,y:oc[0]*TILE};
+
+  // 鍵配置
+  const cands=floors.filter(([r,c])=>Math.abs(r-1)+Math.abs(c-1)>5&&!(r===oc[0]&&c===oc[1]));
+  cands.sort(()=>Math.random()-.5);
+  const kp=[];
+  for(const cell of cands){
+    if(kp.every(k=>Math.abs(k[0]-cell[0])+Math.abs(k[1]-cell[1])>4)){kp.push(cell);if(kp.length===3)break;}
+  }
+  while(kp.length<3) kp.push(cands[kp.length]||floors[floors.length-1-kp.length]);
+  keyItems=kp.map(([r,c])=>({r,c,collected:false}));
+
+  collectedKeys=0;doorOpen=false;moveTimer=0;oniMoveTimer=0;
+  shakeTimer=0;gameResult='';graceTimer=3.5;state='playing';
+  oniMode='patrol';oniPatrolDir=null;oniPatrolTimer=0;alertFlash=0;
+  overlay.innerHTML='';
+  icEl.textContent='鍵: 0/3';
+  stEl.textContent='洋館から脱出せよ！';
+}
+
+// ---- 鬼の徘徊ロジック ----
+const DIRS4=[[0,1],[0,-1],[1,0],[-1,0]];
+function oniPatrolStep(){
+  // ランダム方向を選ぶ（前の方向を優先して直進気味に）
+  const shuffled=[...DIRS4].sort(()=>Math.random()-.5);
+  if(oniPatrolDir){
+    // 前と同じ方向を先頭に
+    shuffled.sort((a,b)=>(a===oniPatrolDir?-1:b===oniPatrolDir?1:0));
+  }
+  for(const[dr,dc]of shuffled){
+    const nr=oni.r+dr,nc=oni.c+dc;
+    if(nr<0||nr>=ROWS||nc<0||nc>=COLS||map[nr][nc]===0) continue;
+    if(map[nr][nc]===3&&!doorOpen) continue;
+    oniPatrolDir=[dr,dc];
+    oni.r=nr;oni.c=nc;oni.x=nc*TILE;oni.y=nr*TILE;
+    return;
+  }
+}
+
+function oniChaseStep(){
+  const path=bfs(map,doorOpen,oni.r,oni.c,player.r,player.c);
+  if(path.length>1){oni.r=path[1][0];oni.c=path[1][1];oni.x=oni.c*TILE;oni.y=oni.r*TILE;}
+}
+
+// ---- 描画 ----
 function drawTile(r,c){
-  const x=c*TILE,y=r*TILE,tile=mapData[r][c];
-  if(tile===0){
-    ctx.fillStyle='#0d0d1a'; ctx.fillRect(x,y,TILE,TILE);
-    ctx.fillStyle='#1a1a2e'; ctx.fillRect(x+1,y+1,TILE-2,TILE-2);
-    // brick texture hint
-    if(r%2===0&&c%3===0){ctx.fillStyle='rgba(255,255,255,0.02)';ctx.fillRect(x+2,y+2,TILE-4,6);}
+  const x=c*TILE,y=r*TILE,t=map[r][c];
+  if(t===0){
+    ctx.fillStyle='#0d0d1a';ctx.fillRect(x,y,TILE,TILE);
+    ctx.fillStyle='#1a1a2e';ctx.fillRect(x+1,y+1,TILE-2,TILE-2);
+    if(r%2===0&&c%3===0){ctx.fillStyle='rgba(255,255,255,0.018)';ctx.fillRect(x+2,y+2,TILE-4,5);}
   } else {
-    ctx.fillStyle='#16213e'; ctx.fillRect(x,y,TILE,TILE);
-    if((r+c)%2===0){ctx.fillStyle='rgba(255,255,255,0.015)';ctx.fillRect(x,y,TILE,TILE);}
-    if(tile===3){
+    ctx.fillStyle='#16213e';ctx.fillRect(x,y,TILE,TILE);
+    if((r+c)%2===0){ctx.fillStyle='rgba(255,255,255,0.013)';ctx.fillRect(x,y,TILE,TILE);}
+    if(t===3){
       ctx.fillStyle=doorOpen?'#2a4a1a':'#7a5a10';
       ctx.fillRect(x+3,y+3,TILE-6,TILE-6);
       if(!doorOpen){ctx.fillStyle='#ffd700';ctx.fillRect(x+TILE/2-3,y+TILE/2-3,6,6);}
-      else{ctx.fillStyle='rgba(60,180,60,0.3)';ctx.fillRect(x,y,TILE,TILE);}
+      else{ctx.fillStyle='rgba(60,200,60,0.25)';ctx.fillRect(x,y,TILE,TILE);}
     }
   }
 }
@@ -161,23 +195,39 @@ function drawPlayer(){
   ctx.fillStyle='#664';ctx.fillRect(x-3,y-10,6,1);
 }
 
-function drawOni(graceLeft){
+function drawOni(grace){
   const x=oni.x+TILE/2,y=oni.y+TILE/2;
   const bob=Math.sin(Date.now()/200)*2;
-  ctx.globalAlpha=graceLeft>0?0.45+0.25*Math.sin(Date.now()/300):1.0;
+
+  // 視線範囲のうっすら表示（徘徊中）
+  if(oniMode==='patrol'&&grace<=0){
+    ctx.fillStyle='rgba(68,136,255,0.04)';
+    ctx.beginPath();ctx.arc(x,y,LOS_RANGE*TILE,0,Math.PI*2);ctx.fill();
+  }
+  // 追跡中は赤いオーラ
+  if(oniMode==='chase'){
+    const pulse=0.15+0.1*Math.sin(Date.now()/100);
+    ctx.fillStyle=`rgba(255,50,50,${pulse})`;
+    ctx.beginPath();ctx.arc(x,y+bob,18,0,Math.PI*2);ctx.fill();
+  }
+
+  ctx.globalAlpha=grace>0?0.45+0.25*Math.sin(Date.now()/300):1.0;
   ctx.fillStyle='#1a2e88';ctx.beginPath();ctx.ellipse(x,y+bob+2,11,14,0,0,Math.PI*2);ctx.fill();
-  ctx.fillStyle='#4488ff';ctx.beginPath();ctx.ellipse(x,y+bob,10,12,0,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle=oniMode==='chase'?'#66aaff':'#4488ff';
+  ctx.beginPath();ctx.ellipse(x,y+bob,10,12,0,0,Math.PI*2);ctx.fill();
   ctx.fillStyle='#fff';ctx.fillRect(x-5,y+bob-5,4,4);ctx.fillRect(x+1,y+bob-5,4,4);
-  ctx.fillStyle='rgba(0,0,0,0.9)';ctx.fillRect(x-4,y+bob-4,2,2);ctx.fillRect(x+2,y+bob-4,2,2);
+  // 追跡中は目が赤く
+  ctx.fillStyle=oniMode==='chase'?'#ff2222':'rgba(0,0,0,0.9)';
+  ctx.fillRect(x-4,y+bob-4,2,2);ctx.fillRect(x+2,y+bob-4,2,2);
   ctx.fillStyle='#2233aa';
   ctx.beginPath();ctx.moveTo(x-6,y+bob-9);ctx.lineTo(x-9,y+bob-17);ctx.lineTo(x-2,y+bob-10);ctx.closePath();ctx.fill();
   ctx.beginPath();ctx.moveTo(x+6,y+bob-9);ctx.lineTo(x+9,y+bob-17);ctx.lineTo(x+2,y+bob-10);ctx.closePath();ctx.fill();
   ctx.globalAlpha=1.0;
-  if(graceLeft>0){
+
+  if(grace>0){
     ctx.fillStyle='rgba(120,160,255,0.85)';
-    ctx.font='bold 10px monospace';
-    ctx.textAlign='center';
-    ctx.fillText(Math.ceil(graceLeft)+'秒後に動く',x,y+bob-22);
+    ctx.font='bold 10px monospace';ctx.textAlign='center';
+    ctx.fillText(Math.ceil(grace)+'秒後に動く',x,y+bob-22);
   }
 }
 
@@ -197,19 +247,33 @@ function drawFog(){
   const grd=ctx.createRadialGradient(px,py,55,px,py,230);
   grd.addColorStop(0,'rgba(0,0,0,0)');
   grd.addColorStop(0.5,'rgba(0,0,5,0.2)');
-  grd.addColorStop(1,'rgba(0,0,5,0.93)');
+  grd.addColorStop(1,'rgba(0,0,5,0.94)');
   ctx.fillStyle=grd;ctx.fillRect(0,0,canvas.width,canvas.height);
+}
+
+// 発見！エフェクト
+function drawAlertFlash(v){
+  if(v<=0) return;
+  ctx.fillStyle=`rgba(255,60,0,${v*0.18})`;
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+  // 「発見！」テキスト
+  if(v>0.5){
+    const ox=oni.x+TILE/2,oy=oni.y+TILE/2-28;
+    ctx.font='bold 14px monospace';ctx.textAlign='center';
+    ctx.fillStyle=`rgba(255,80,0,${v})`;
+    ctx.fillText('！！！',ox,oy);
+  }
 }
 
 function showResult(){
   if(gameResult==='win'){
-    msg.innerHTML=`<div style="background:rgba(0,20,0,0.92);border:1px solid #3a6;padding:20px 30px;border-radius:8px;color:#7fa">
+    overlay.innerHTML=`<div style="background:rgba(0,20,0,0.92);border:1px solid #3a6;padding:20px 30px;border-radius:8px;color:#7fa">
       <div style="font-size:22px;font-weight:bold;margin-bottom:8px;">🎉 脱出成功！</div>
       <div style="font-size:13px;color:#5a8;margin-bottom:14px;">洋館から無事に逃げ出した...</div>
-      <button onclick="window.resetGame()" style="background:#1a4a2a;color:#7fa;border:1px solid #3a6;padding:8px 20px;cursor:pointer;font-family:monospace;font-size:13px;border-radius:4px;margin-right:8px;">もう一度</button>
+      <button onclick="window.resetGame()" style="background:#1a4a2a;color:#7fa;border:1px solid #3a6;padding:8px 20px;cursor:pointer;font-family:monospace;font-size:13px;border-radius:4px;">もう一度</button>
     </div>`;
   } else {
-    msg.innerHTML=`<div style="background:rgba(20,0,0,0.92);border:1px solid #a33;padding:20px 30px;border-radius:8px;color:#f88">
+    overlay.innerHTML=`<div style="background:rgba(20,0,0,0.92);border:1px solid #a33;padding:20px 30px;border-radius:8px;color:#f88">
       <div style="font-size:22px;font-weight:bold;margin-bottom:8px;">💀 捕まった...</div>
       <div style="font-size:13px;color:#a66;margin-bottom:14px;">青鬼に追いつかれてしまった。</div>
       <button onclick="window.resetGame()" style="background:#3a0a0a;color:#f88;border:1px solid #a33;padding:8px 20px;cursor:pointer;font-family:monospace;font-size:13px;border-radius:4px;">もう一度</button>
@@ -220,70 +284,92 @@ function showResult(){
 let last=null;
 function loop(ts){
   if(!last) last=ts;
-  const dt=Math.min((ts-last)/1000,0.1);
-  last=ts;
+  const dt=Math.min((ts-last)/1000,0.1);last=ts;
 
   if(state==='playing'){
+    // カウントダウン
     if(graceTimer>0){
       graceTimer=Math.max(0,graceTimer-dt);
-      if(graceTimer>0) statusEl.textContent=`青鬼が動き出すまで ${Math.ceil(graceTimer)} 秒！急げ！`;
-      else statusEl.textContent=doorOpen?'出口へ急げ！':'鍵を集めて脱出しろ！';
+      stEl.textContent=graceTimer>0?`青鬼が動き出すまで ${Math.ceil(graceTimer)} 秒！急げ！`:doorOpen?'出口へ急げ！':'鍵を集めて脱出しろ！';
     }
 
+    // プレイヤー移動
     let dx=0,dy=0;
-    if(pressedKeys.has('ArrowLeft')||pressedKeys.has('a')||pressedKeys.has('A')) dx=-1;
-    if(pressedKeys.has('ArrowRight')||pressedKeys.has('d')||pressedKeys.has('D')) dx=1;
-    if(pressedKeys.has('ArrowUp')||pressedKeys.has('w')||pressedKeys.has('W')) dy=-1;
-    if(pressedKeys.has('ArrowDown')||pressedKeys.has('s')||pressedKeys.has('S')) dy=1;
-
+    if(pKeys.has('ArrowLeft')||pKeys.has('a')||pKeys.has('A')) dx=-1;
+    if(pKeys.has('ArrowRight')||pKeys.has('d')||pKeys.has('D')) dx=1;
+    if(pKeys.has('ArrowUp')||pKeys.has('w')||pKeys.has('W')) dy=-1;
+    if(pKeys.has('ArrowDown')||pKeys.has('s')||pKeys.has('S')) dy=1;
     moveTimer+=dt;
     if(moveTimer>=0.1&&(dx||dy)){
       moveTimer=0;
       const nr=player.r+dy,nc=player.c+dx;
-      if(nr>=0&&nr<ROWS&&nc>=0&&nc<COLS&&mapData[nr][nc]!==0&&!(mapData[nr][nc]===3&&!doorOpen)){
+      if(nr>=0&&nr<ROWS&&nc>=0&&nc<COLS&&map[nr][nc]!==0&&!(map[nr][nc]===3&&!doorOpen)){
         player.r=nr;player.c=nc;player.x=nc*TILE;player.y=nr*TILE;
       }
     }
 
+    // 鍵拾い
     keyItems.forEach(k=>{
       if(!k.collected&&k.r===player.r&&k.c===player.c){
         k.collected=true;collectedKeys++;
-        itemCountEl.textContent=`鍵: ${collectedKeys}/3`;
-        if(collectedKeys>=3){doorOpen=true;statusEl.textContent='🔓 出口が開いた！右下のドアへ走れ！';}
-        else statusEl.textContent=`🗝 鍵を拾った！(${collectedKeys}/3)`;
+        icEl.textContent=`鍵: ${collectedKeys}/3`;
+        if(collectedKeys>=3){doorOpen=true;stEl.textContent='🔓 出口が開いた！右下のドアへ走れ！';}
+        else stEl.textContent=`🗝 鍵を拾った！(${collectedKeys}/3)`;
       }
     });
 
+    // 脱出チェック
     if(player.r===ROWS-2&&player.c===COLS-2&&doorOpen){
-      state='win';gameResult='win';showResult();
-      requestAnimationFrame(loop);return;
+      state='win';gameResult='win';showResult();requestAnimationFrame(loop);return;
     }
 
+    // 鬼AI
     if(graceTimer<=0){
+      // 視線判定
+      const canSee=hasLOS(map,oni.r,oni.c,player.r,player.c);
+      const prevMode=oniMode;
+      if(canSee){
+        if(oniMode==='patrol'){alertFlash=1.0;}
+        oniMode='chase';
+        stEl.textContent='👁 見つかった！逃げろ！';
+      } else {
+        // 視線が切れたら一定時間後に徘徊に戻る
+        if(oniMode==='chase'){
+          // 追跡中にLOS切れても少し続ける（3マス以内なら継続）
+          const d=Math.abs(oni.r-player.r)+Math.abs(oni.c-player.c);
+          if(d>4){oniMode='patrol';if(!doorOpen)stEl.textContent='鍵を集めて脱出しろ！';}
+        }
+      }
+      if(alertFlash>0) alertFlash=Math.max(0,alertFlash-dt*1.5);
+
       oniMoveTimer+=dt;
-      const oniDelay=Math.max(0.45,0.75-collectedKeys*0.07);
-      if(oniMoveTimer>=oniDelay){
+      // 徘徊: 0.7秒/マス、追跡: 0.3秒/マス（追跡が約2倍速）
+      const delay=oniMode==='chase'?Math.max(0.28,0.33-collectedKeys*0.02):0.7;
+      if(oniMoveTimer>=delay){
         oniMoveTimer=0;
-        const path=bfsPath(mapData,doorOpen,oni.r,oni.c,player.r,player.c);
-        if(path.length>1){oni.r=path[1][0];oni.c=path[1][1];oni.x=oni.c*TILE;oni.y=oni.r*TILE;}
+        if(oniMode==='chase') oniChaseStep();
+        else { oniPatrolTimer++; if(oniPatrolTimer%1===0) oniPatrolStep(); }
       }
     }
 
+    // 捕捉チェック
     if(oni.r===player.r&&oni.c===player.c){
       state='dead';gameResult='dead';shakeTimer=0.6;showResult();
     }
     if(shakeTimer>0) shakeTimer-=dt;
   }
 
+  // 描画
   ctx.fillStyle='#000';ctx.fillRect(0,0,canvas.width,canvas.height);
-  const sx=state==='dead'&&shakeTimer>0?(Math.random()-0.5)*10:0;
-  const sy=state==='dead'&&shakeTimer>0?(Math.random()-0.5)*10:0;
+  const sx=state==='dead'&&shakeTimer>0?(Math.random()-.5)*10:0;
+  const sy=state==='dead'&&shakeTimer>0?(Math.random()-.5)*10:0;
   ctx.save();ctx.translate(sx,sy);
   for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++) drawTile(r,c);
   drawKeys();
   drawPlayer();
   drawOni(graceTimer);
   drawFog();
+  drawAlertFlash(alertFlash);
   ctx.restore();
   if(state==='dead'&&shakeTimer<=0){ctx.fillStyle='rgba(80,0,0,0.5)';ctx.fillRect(0,0,canvas.width,canvas.height);}
 
@@ -293,30 +379,29 @@ function loop(ts){
 initGame();
 
 document.addEventListener('keydown',e=>{
-  pressedKeys.add(e.key);
+  pKeys.add(e.key);
   if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
 });
-document.addEventListener('keyup',e=>pressedKeys.delete(e.key));
+document.addEventListener('keyup',e=>pKeys.delete(e.key));
 
-// D-pad
-const dpad=document.createElement('div');
-dpad.style.cssText='display:flex;flex-direction:column;align-items:center;gap:4px;margin-top:10px;';
-dpad.innerHTML=`
+// Dパッド
+const dp=document.createElement('div');
+dp.style.cssText='display:flex;flex-direction:column;align-items:center;gap:4px;margin-top:8px;';
+dp.innerHTML=`
   <button id="up" style="width:48px;height:48px;background:#1a1a2e;color:#8af;border:1px solid #334;border-radius:8px;font-size:20px;cursor:pointer;touch-action:none;">▲</button>
   <div style="display:flex;gap:4px;">
     <button id="left" style="width:48px;height:48px;background:#1a1a2e;color:#8af;border:1px solid #334;border-radius:8px;font-size:20px;cursor:pointer;touch-action:none;">◀</button>
     <button id="down" style="width:48px;height:48px;background:#1a1a2e;color:#8af;border:1px solid #334;border-radius:8px;font-size:20px;cursor:pointer;touch-action:none;">▼</button>
     <button id="right" style="width:48px;height:48px;background:#1a1a2e;color:#8af;border:1px solid #334;border-radius:8px;font-size:20px;cursor:pointer;touch-action:none;">▶</button>
   </div>`;
-document.getElementById('gameContainer').appendChild(dpad);
-
+document.getElementById('gc').appendChild(dp);
 [['up','ArrowUp'],['down','ArrowDown'],['left','ArrowLeft'],['right','ArrowRight']].forEach(([id,key])=>{
-  const btn=document.getElementById(id);
-  btn.addEventListener('mousedown',()=>pressedKeys.add(key));
-  btn.addEventListener('mouseup',()=>pressedKeys.delete(key));
-  btn.addEventListener('mouseleave',()=>pressedKeys.delete(key));
-  btn.addEventListener('touchstart',e=>{e.preventDefault();pressedKeys.add(key);});
-  btn.addEventListener('touchend',e=>{e.preventDefault();pressedKeys.delete(key);});
+  const b=document.getElementById(id);
+  b.addEventListener('mousedown',()=>pKeys.add(key));
+  b.addEventListener('mouseup',()=>pKeys.delete(key));
+  b.addEventListener('mouseleave',()=>pKeys.delete(key));
+  b.addEventListener('touchstart',e=>{e.preventDefault();pKeys.add(key);});
+  b.addEventListener('touchend',e=>{e.preventDefault();pKeys.delete(key);});
 });
 
 window.resetGame=()=>{initGame();last=null;};
