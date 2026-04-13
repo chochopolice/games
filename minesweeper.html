@@ -155,9 +155,22 @@ function nb(i){
   return res;
 }
 
+function nbRadius(i, radius){
+  const r=Math.floor(i/cols),c=i%cols,res=new Set();
+  res.add(i);
+  for(let dr=-radius;dr<=radius;dr++)for(let dc=-radius;dc<=radius;dc++){
+    const nr=r+dr,nc=c+dc;
+    if(nr>=0&&nr<rows&&nc>=0&&nc<cols)res.add(nr*cols+nc);
+  }
+  return [...res];
+}
+
 function placeMines(safe){
-  const safe_nb=nb(safe);
-  let pool=[...Array(rows*cols).keys()].filter(i=>i!==safe&&!safe_nb.includes(i));
+  // 半径3のセーフゾーンで地雷を配置し、開始時に広い範囲が開くようにする
+  const safeZone=new Set(nbRadius(safe,2));
+  let pool=[...Array(rows*cols).keys()].filter(i=>!safeZone.has(i));
+  // セーフゾーンに空きが足りない場合は半径を縮小
+  if(pool.length < mines) pool=[...Array(rows*cols).keys()].filter(i=>i!==safe&&!nb(safe).includes(i));
   const needed=Math.min(mines,pool.length);
   for(let m=0;m<needed;m++){
     const ri=Math.floor(Math.random()*pool.length);
@@ -168,6 +181,18 @@ function placeMines(safe){
     if(board[i]===-1)continue;
     board[i]=nb(i).filter(n=>board[n]===-1).length;
   }
+}
+
+function findNearestZero(from){
+  // BFSで最も近い空白セル(値0)を探す
+  const visited=new Set([from]);
+  const queue=[from];
+  while(queue.length){
+    const cur=queue.shift();
+    if(board[cur]===0)return cur;
+    nb(cur).forEach(n=>{if(!visited.has(n)){visited.add(n);queue.push(n);}});
+  }
+  return -1;
 }
 
 function startTimer(){
@@ -183,7 +208,10 @@ function onClick(i){
   if(state==='won'||state==='lost')return;
   if(rev[i]){chord(i);return;}
   if(flag[i])return;
-  if(first){first=false;state='playing';placeMines(i);startTimer();}
+  if(first){
+    first=false;state='playing';placeMines(i);startTimer();
+    if(board[i]!==0){const z=findNearestZero(i);if(z!==-1)flood(z);}
+  }
   if(board[i]===-1){explode(i);return;}
   flood(i);checkWin();
 }

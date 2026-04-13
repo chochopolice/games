@@ -369,8 +369,22 @@ function update() {
       const boxCount=getBlastCells({c:ec,r:er,range:e.fireRange}).filter(cl=>game.grid[cl.r]&&game.grid[cl.r][cl.c]===2).length;
       const shouldBomb=hits>=1||(boxCount>=1&&Math.random()<0.04);
       if(shouldBomb){
-        game.bombs.push({c:ec,r:er,timer:130+Math.floor(Math.random()*40),range:e.fireRange,owner:'enemy',ownerRef:e});
-        e.activeBombs++;
+        // 爆弾を置いた後に安全に逃げられるか確認
+        const fakeBomb={c:ec,r:er,range:e.fireRange};
+        const blastAfter=getBlastCells(fakeBomb);
+        const canEscape=dirMap.some(([ddc,ddr])=>{
+          const nc=ec+ddc,nr=er+ddr;
+          return isWalkable(nc,nr)&&!blastAfter.some(cl=>cl.c===nc&&cl.r===nr)&&!isDangerCell(nc,nr);
+        });
+        if(canEscape){
+          game.bombs.push({c:ec,r:er,timer:150,range:e.fireRange,owner:'enemy',ownerRef:e});
+          e.activeBombs++;
+          // 置いたら即逃げ方向を設定
+          const escapes=dirMap.map((d,i)=>({i,c:ec+d[0],r:er+d[1]}))
+            .filter(({c,r})=>isWalkable(c,r)&&!blastAfter.some(cl=>cl.c===c&&cl.r===r));
+          if(escapes.length>0) e.dir=escapes[Math.floor(Math.random()*escapes.length)].i;
+          e.moveTimer=0;
+        }
       }
     }
 
@@ -379,10 +393,16 @@ function update() {
     if(e.moveTimer<=0){
       e.moveTimer=Math.floor(8+Math.random()*16);
       if(inDanger){
-        // 危険回避：安全な方向を探す
+        // 危険回避：安全な方向を優先（さらに先まで安全なマスを優先）
         const safe=dirMap.map((d,i)=>({i,c:ec+d[0],r:er+d[1]}))
           .filter(({c,r})=>isWalkable(c,r)&&!isDangerCell(c,r));
-        if(safe.length>0) e.dir=safe[Math.floor(Math.random()*safe.length)].i;
+        // 2マス先まで安全なものをさらに優先
+        const superSafe=safe.filter(({c,r})=>{
+          const [dd0,dd1]=dirMap[dirMap.findIndex(d=>d[0]===(c-ec)&&d[1]===(r-er))];
+          return !isDangerCell(c+dd0,r+dd1);
+        });
+        const chosen=superSafe.length>0?superSafe:safe;
+        if(chosen.length>0) e.dir=chosen[Math.floor(Math.random()*chosen.length)].i;
         else e.dir=Math.floor(Math.random()*4);
       } else if(targetPu&&bestDist<8&&Math.random()<0.5){
         // アイテムへ向かう
