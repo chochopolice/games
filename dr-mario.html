@@ -475,18 +475,19 @@ document.addEventListener('keydown', e=>{
   if(e.key==='ArrowLeft')  shift(0,-1);
   if(e.key==='ArrowRight') shift(0,1);
   if(e.key==='ArrowUp'||e.key==='z'||e.key==='Z') rotate();
-  if(e.key==='ArrowDown'){ if(!shift(1,0)) lock(); dropAcc=0; }
+
 });
 document.addEventListener('keyup', e=>{ held[e.key]=false; });
 
-// DAS
+// DAS & 急降下
 let dasAcc=0;
 setInterval(()=>{
   if(phase!=='play'||!pill) return;
-  if(held['ArrowLeft'])  { dasAcc+=16; if(dasAcc>180) shift(0,-1); }
-  else if(held['ArrowRight']){ dasAcc+=16; if(dasAcc>180) shift(0,1); }
+  if(held['ArrowLeft'])       { dasAcc+=16; if(dasAcc>180) shift(0,-1); }
+  else if(held['ArrowRight']) { dasAcc+=16; if(dasAcc>180) shift(0,1); }
   else dasAcc=0;
-},16);
+  if(held['ArrowDown']) { if(!shift(1,0)) lock(); dropAcc=0; }
+},50);
 
 // Touch
 let tx0=0,ty0=0;

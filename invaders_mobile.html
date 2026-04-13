@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>スペースインベーダー</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+  body{background:#0a0a14;color:#fff;font-family:monospace;display:flex;flex-direction:column;align-items:center;min-height:100dvh;overflow:hidden;touch-action:none;}
+  #hud{display:flex;gap:1.5rem;padding:.5rem 1rem;font-size:13px;color:#888;width:100%;max-width:480px;}
+  #hud span{color:#fff;font-weight:bold;}
+  canvas{display:block;width:100%;max-width:480px;border:1px solid #223;}
+  #msg{font-size:16px;font-weight:bold;color:#fff;min-height:24px;text-align:center;padding:.3rem;}
+  #btn{display:none;padding:10px 28px;border:1px solid #4af;border-radius:8px;background:transparent;color:#4af;cursor:pointer;font-size:14px;font-family:monospace;}
+  #btn:active{background:#1a3a5c;}
+
+  /* Controller */
+  #ctrl{display:flex;align-items:center;justify-content:space-between;width:100%;max-width:480px;padding:12px 20px;flex-shrink:0;}
+
+  /* D-pad */
+  .dpad{position:relative;width:128px;height:128px;}
+  .db{position:absolute;width:42px;height:42px;background:#1a1a2e;border:1.5px solid #334;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:20px;cursor:pointer;color:#aaa;transition:background .1s;}
+  .db:active,.db.pressed{background:#2a2a4e;color:#fff;border-color:#4af;}
+  #dl{left:0;top:43px;}#dr{right:0;top:43px;}#du{left:43px;top:0;}#dd{left:43px;bottom:0;}
+  #dc{left:43px;top:43px;background:#111;border-color:#222;font-size:8px;color:#333;}
+
+  /* Shot button */
+  #shot{width:80px;height:80px;border-radius:50%;background:#0d2a42;border:2.5px solid #4af;color:#4af;font-size:12px;font-weight:bold;cursor:pointer;display:flex;align-items:center;justify-content:center;letter-spacing:1px;transition:background .1s;}
+  #shot:active,#shot.pressed{background:#1a4a7c;box-shadow:0 0 12px #4af6;}
+
+  #kb{font-size:11px;color:#444;padding:.3rem;}
+</style>
+</head>
+<body>
+<div id="hud">スコア:<span id="sv">0</span> ライフ:<span id="lv">♥ ♥ ♥</span> Lv:<span id="lev">1</span></div>
+<canvas id="c"></canvas>
+<div id="msg"></div>
+<button id="btn" onclick="startGame()">もう一度プレイ</button>
+<div id="ctrl">
+  <div class="dpad">
+    <div class="db" id="du">▲</div>
+    <div class="db" id="dl">◀</div>
+    <div class="db" id="dc"></div>
+    <div class="db" id="dr">▶</div>
+    <div class="db" id="dd">▼</div>
+  </div>
+  <div id="shot">SHOT</div>
+</div>
+<div id="kb">キーボード: ← → 移動 | スペース 射撃</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const W = 480, H = 400;
+canvas.width = W; canvas.height = H;
+
+let player,bullets,eBullets,enemies,barriers,score,lives,level,running,animId,keys,ufo,ufoTimer,eDir,eMoveT,fireT,explosions;
+
+function initGame(){
+  score=0;lives=3;level=1;
+  player={x:W/2-16,y:H-44,w:32,h:14,speed:5};
+  bullets=[];eBullets=[];ufo=null;ufoTimer=0;
+  keys={};eDir=1;eMoveT=0;fireT=0;explosions=[];
+  createEnemies();createBarriers();updateHUD();
+}
+
+function createEnemies(){
+  enemies=[];
+  for(let r=0;r<4;r++) for(let c=0;c<10;c++)
+    enemies.push({x:30+c*42,y:55+r*30,w:32,h:22,row:r,frame:0,alive:true});
+}
+
+function createBarriers(){
+  barriers=[];
+  for(let bx of[70,185,300,415]){
+    for(let row=0;row<4;row++) for(let col=0;col<7;col++){
+      if(row===0&&(col===0||col===6))continue;
+      if(row===3&&(col<2||col>4))continue;
+      barriers.push({x:bx+col*8,y:H-90+row*8,w:8,h:8,hp:3});
+    }
+  }
+}
+
+function updateHUD(){
+  document.getElementById('sv').textContent=score;
+  document.getElementById('lv').textContent='♥ '.repeat(lives).trim()||'×';
+  document.getElementById('lev').textContent=level;
+}
+
+function rect(a,b){return a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y;}
+
+function drawPlayer(x,y,a){
+  ctx.globalAlpha=a||1;
+  ctx.fillStyle='#4af';ctx.fillRect(x+12,y,8,4);ctx.fillRect(x+4,y+4,24,4);ctx.fillRect(x,y+8,32,6);
+  ctx.fillStyle='#6cf';ctx.fillRect(x+14,y+1,4,2);
+  ctx.globalAlpha=1;
+}
+
+function drawEnemy(e){
+  const t=e.frame,r=e.row,x=e.x,y=e.y;
+  ctx.fillStyle=r===0?'#f8a':r<=2?'#afa':'#ffa';
+  if(r===0){
+    ctx.fillRect(x+8,y,16,4);ctx.fillRect(x+4,y+4,24,4);ctx.fillRect(x,y+8,32,6);
+    ctx.fillRect(x+4,y+14,8,4);ctx.fillRect(x+20,y+14,8,4);
+    t%2?[ctx.fillRect(x+2,y+10,4,4),ctx.fillRect(x+26,y+10,4,4)]:[ctx.fillRect(x,y+6,4,6),ctx.fillRect(x+28,y+6,4,6)];
+  }else if(r<=2){
+    ctx.fillRect(x+4,y,24,4);ctx.fillRect(x,y+4,32,8);ctx.fillRect(x+4,y+12,8,4);ctx.fillRect(x+20,y+12,8,4);
+    t%2?[ctx.fillRect(x+2,y+8,4,6),ctx.fillRect(x+26,y+8,4,6)]:[ctx.fillRect(x,y+4,4,8),ctx.fillRect(x+28,y+4,4,8)];
+  }else{
+    ctx.fillRect(x+8,y,16,6);ctx.fillRect(x,y+6,32,8);ctx.fillRect(x+4,y+14,24,4);
+    ctx.fillRect(x,y+6,6,6);ctx.fillRect(x+26,y+6,6,6);
+    t%2?[ctx.fillRect(x,y+16,4,2),ctx.fillRect(x+28,y+16,4,2)]:[ctx.fillRect(x+2,y+14,4,4),ctx.fillRect(x+26,y+14,4,4)];
+  }
+}
+
+function drawUFO(){
+  if(!ufo)return;
+  ctx.fillStyle='#f55';ctx.fillRect(ufo.x+10,ufo.y+2,20,6);ctx.fillRect(ufo.x,ufo.y+8,40,8);ctx.fillRect(ufo.x+6,ufo.y+16,28,4);
+  ctx.fillStyle='#faa';ctx.fillRect(ufo.x+12,ufo.y+4,4,4);ctx.fillRect(ufo.x+20,ufo.y+4,4,4);ctx.fillRect(ufo.x+28,ufo.y+4,4,4);
+}
+
+function drawExpl(e){
+  ctx.fillStyle=e.c;
+  for(let i=0;i<6;i++){const a=i*60*Math.PI/180,d=7;ctx.fillRect(e.x+Math.cos(a)*d-2,e.y+Math.sin(a)*d-2,4,4);}
+}
+
+function tryShoot(){if(bullets.length<2)bullets.push({x:player.x+14,y:player.y,w:4,h:10,speed:7});}
+
+function gameLoop(){
+  if(!running)return;
+  ctx.fillStyle='#0a0a14';ctx.fillRect(0,0,W,H);
+
+  if(keys['ArrowLeft']||keys['a'])player.x=Math.max(0,player.x-player.speed);
+  if(keys['ArrowRight']||keys['d'])player.x=Math.min(W-player.w,player.x+player.speed);
+  if(keys[' ']||keys['Space']){tryShoot();keys[' ']=false;keys['Space']=false;}
+
+  const alive=enemies.filter(e=>e.alive);
+  eMoveT++;
+  const mi=Math.max(4,40-alive.length*2-(level-1)*3);
+  if(eMoveT>=mi){
+    eMoveT=0;let edge=false;
+    for(let e of alive){e.frame^=1;e.x+=eDir*(3+level*.5);if(e.x<=4||e.x+e.w>=W-4)edge=true;}
+    if(edge){eDir*=-1;for(let e of alive){e.y+=10;e.x+=eDir*4;}
+      if(alive.some(e=>e.y+e.h>=player.y-4)){endGame(false);return;}
+    }
+  }
+
+  fireT++;
+  if(alive.length>0&&fireT>=Math.max(30,90-level*8)){
+    fireT=0;const s=alive[Math.floor(Math.random()*alive.length)];
+    eBullets.push({x:s.x+14,y:s.y+s.h,w:4,h:10,speed:3+level*.4});
+  }
+
+  for(let b of bullets)b.y-=b.speed;
+  bullets=bullets.filter(b=>b.y>-10);
+  for(let b of eBullets)b.y+=b.speed;
+  eBullets=eBullets.filter(b=>b.y<H+10);
+
+  ufoTimer++;
+  if(!ufo&&ufoTimer>400+Math.random()*300){ufoTimer=0;ufo={x:-42,y:16,w:40,h:20,speed:1.5};}
+  if(ufo){ufo.x+=ufo.speed;if(ufo.x>W+10)ufo=null;}
+
+  for(let b of[...bullets]){
+    if(ufo&&rect(b,ufo)){score+=100+Math.floor(Math.random()*20)*5;explosions.push({x:ufo.x+20,y:ufo.y+10,t:8,c:'#f88'});ufo=null;bullets.splice(bullets.indexOf(b),1);updateHUD();continue;}
+    let hit=false;
+    for(let e of enemies){if(e.alive&&rect(b,e)){e.alive=false;score+=(4-e.row)*10;explosions.push({x:e.x+e.w/2,y:e.y+e.h/2,t:8,c:e.row===0?'#faa':e.row<=2?'#afa':'#ffa'});bullets.splice(bullets.indexOf(b),1);updateHUD();hit=true;break;}}
+    if(!hit)for(let bar of barriers)if(bar.hp>0&&rect(b,bar)){bar.hp--;bullets.splice(bullets.indexOf(b),1);break;}
+  }
+
+  for(let b of[...eBullets]){
+    if(rect(b,player)){lives--;explosions.push({x:player.x+16,y:player.y+7,t:15,c:'#4af'});eBullets.splice(eBullets.indexOf(b),1);updateHUD();if(lives<=0){endGame(false);return;}break;}
+    for(let bar of barriers)if(bar.hp>0&&rect(b,bar)){bar.hp--;eBullets.splice(eBullets.indexOf(b),1);break;}
+  }
+
+  drawUFO();
+  for(let e of enemies)if(e.alive)drawEnemy(e);
+  for(let bar of barriers)if(bar.hp>0){ctx.fillStyle=bar.hp>=3?'#4d4':bar.hp===2?'#4a4':'#363';ctx.fillRect(bar.x,bar.y,bar.w,bar.h);}
+  drawPlayer(player.x,player.y);
+  ctx.fillStyle='#4f9';for(let b of bullets)ctx.fillRect(b.x,b.y,b.w,b.h);
+  ctx.fillStyle='#f84';for(let b of eBullets)ctx.fillRect(b.x,b.y,b.w,b.h);
+  explosions=explosions.filter(e=>e.t-->0);
+  for(let e of explosions)drawExpl(e);
+
+  ctx.strokeStyle='#333';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(0,H-20);ctx.lineTo(W,H-20);ctx.stroke();
+  for(let i=0;i<lives;i++)drawPlayer(10+i*38,H-18,.7);
+
+  if(!enemies.some(e=>e.alive)){level++;bullets=[];eBullets=[];ufo=null;createEnemies();updateHUD();}
+
+  animId=requestAnimationFrame(gameLoop);
+}
+
+function endGame(){
+  running=false;cancelAnimationFrame(animId);
+  document.getElementById('msg').textContent=`ゲームオーバー — スコア: ${score}`;
+  document.getElementById('btn').style.display='inline-block';
+}
+
+function startGame(){
+  cancelAnimationFrame(animId);
+  document.getElementById('msg').textContent='';
+  document.getElementById('btn').style.display='none';
+  explosions=[];initGame();running=true;gameLoop();
+}
+
+// Keyboard
+document.addEventListener('keydown',e=>{keys[e.key]=true;if([' ','ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key))e.preventDefault();});
+document.addEventListener('keyup',e=>{keys[e.key]=false;});
+
+// D-pad buttons
+function bindHold(id, key){
+  const el=document.getElementById(id);
+  const on=e=>{keys[key]=true;el.classList.add('pressed');e.preventDefault();};
+  const off=e=>{keys[key]=false;el.classList.remove('pressed');e.preventDefault();};
+  el.addEventListener('touchstart',on,{passive:false});
+  el.addEventListener('touchend',off,{passive:false});
+  el.addEventListener('touchcancel',off,{passive:false});
+  el.addEventListener('mousedown',on);
+  el.addEventListener('mouseup',off);
+  el.addEventListener('mouseleave',off);
+}
+bindHold('dl','ArrowLeft');
+bindHold('dr','ArrowRight');
+bindHold('du','ArrowUp');
+bindHold('dd','ArrowDown');
+
+// Shot button (tap to fire, not hold)
+const shotEl=document.getElementById('shot');
+const doShot=e=>{tryShoot();shotEl.classList.add('pressed');setTimeout(()=>shotEl.classList.remove('pressed'),120);e.preventDefault();};
+shotEl.addEventListener('touchstart',doShot,{passive:false});
+shotEl.addEventListener('mousedown',doShot);
+
+startGame();
+</script>
+</body>
+</html>

@@ -202,6 +202,7 @@ function spawnEnemies() {
         speed: 0.9 + i*0.18,
         moveTimer: Math.floor(Math.random()*40),
         dead: false, frame: 0, type: i%2, colorIdx: i,
+        activeBombs: 0, maxBombs: 1, fireRange: 1,
       });
     }
   });
@@ -220,36 +221,62 @@ function placeBomb() {
   if(p.dead || p.activeBombs >= p.maxBombs) return;
   const bc = Math.round(p.px/TILE), br = Math.round(p.py/TILE);
   if(game.bombs.some(b=>b.c===bc&&b.r===br)) return;
-  game.bombs.push({ c:bc, r:br, timer:150, range:p.fireRange });
+  game.bombs.push({c:bc,r:br,timer:150,range:p.fireRange,owner:'player'});
   p.activeBombs++;
 }
 
+function getBlastCells(bomb) {
+  const dirs=[[0,0],[1,0],[-1,0],[0,1],[0,-1]];
+  const cells=[];
+  for(const [dc,dr] of dirs){
+    if(dc===0&&dr===0){cells.push({c:bomb.c,r:bomb.r});continue;}
+    for(let i=1;i<=bomb.range;i++){
+      const nc=bomb.c+dc*i,nr=bomb.r+dr*i;
+      if(nr<0||nr>=ROWS||nc<0||nc>=COLS) break;
+      if(game.grid[nr][nc]===1) break;
+      cells.push({c:nc,r:nr});
+      if(game.grid[nr][nc]===2) break;
+    }
+  }
+  return cells;
+}
+function isDangerCell(c,r){
+  for(const b of game.bombs){if(getBlastCells(b).some(cl=>cl.c===c&&cl.r===r)) return true;}
+  for(const ex of game.explosions){if(ex.cells.some(cl=>cl.c===c&&cl.r===r)) return true;}
+  return false;
+}
+function blastTargets(c,r,range,self){
+  const cells=getBlastCells({c,r,range});
+  let n=0;
+  const p=game.player;
+  if(!p.dead&&cells.some(cl=>cl.c===Math.round(p.px/TILE)&&cl.r===Math.round(p.py/TILE))) n+=10;
+  game.enemies.forEach(e=>{
+    if(!e.dead&&e!==self&&cells.some(cl=>cl.c===Math.round(e.px/TILE)&&cl.r===Math.round(e.py/TILE))) n++;
+  });
+  return n;
+}
 function explodeBomb(bomb) {
-  const dirs = [[0,0],[1,0],[-1,0],[0,1],[0,-1]];
-  const cells = [];
-  for(const [dc,dr] of dirs) {
-    if(dc===0&&dr===0) { cells.push({c:bomb.c, r:bomb.r}); continue; }
-    for(let i=1; i<=bomb.range; i++) {
-      const nc=bomb.c+dc*i, nr=bomb.r+dr*i;
-      if(!isWalkable(nc,nr) && game.grid[nr]?.[nc]!==2) break;
-      cells.push({c:nc, r:nr});
-      if(game.grid[nr][nc]===2) {
-        game.grid[nr][nc] = 0;
-        game.score += 10;
-        if(Math.random()<0.35) {
-          const t = ['bomb','fire','speed'][Math.floor(Math.random()*3)];
+  const cells=getBlastCells(bomb);
+  const dirs=[[1,0],[-1,0],[0,1],[0,-1]];
+  for(const [dc,dr] of dirs){
+    for(let i=1;i<=bomb.range;i++){
+      const nc=bomb.c+dc*i,nr=bomb.r+dr*i;
+      if(nr<0||nr>=ROWS||nc<0||nc>=COLS) break;
+      if(game.grid[nr][nc]===1) break;
+      if(game.grid[nr][nc]===2){
+        game.grid[nr][nc]=0; game.score+=10;
+        if(Math.random()<0.35){
+          const t=['bomb','fire','speed'][Math.floor(Math.random()*3)];
           game.powerups.push({c:nc,r:nr,type:t,frame:0});
         }
         break;
       }
     }
   }
-  game.explosions.push({ cells, timer: 45 });
-  game.player.activeBombs = Math.max(0, game.player.activeBombs-1);
-  // chain
-  game.bombs.forEach(b => {
-    if(b!==bomb && cells.some(cell=>cell.c===b.c&&cell.r===b.r)) b.timer=1;
-  });
+  game.explosions.push({cells,timer:45});
+  if(bomb.owner==='player') game.player.activeBombs=Math.max(0,game.player.activeBombs-1);
+  else if(bomb.ownerRef) bomb.ownerRef.activeBombs=Math.max(0,(bomb.ownerRef.activeBombs||0)-1);
+  game.bombs.forEach(b=>{if(b!==bomb&&cells.some(cl=>cl.c===b.c&&cl.r===b.r)) b.timer=1;});
 }
 
 function hitPlayer() {
@@ -316,26 +343,101 @@ function update() {
     moveEnt(p,dx,dy,false);
   }
 
-  // enemies
+  // enemy AI
   const dirMap=[[1,0],[-1,0],[0,1],[0,-1]];
   game.enemies.forEach(e => {
     if(e.dead) return;
     e.frame++;
+    if(e.activeBombs===undefined) e.activeBombs=0;
+    if(e.maxBombs===undefined) e.maxBombs=1;
+    if(e.fireRange===undefined) e.fireRange=1;
+
+    const ec=Math.round(e.px/TILE), er=Math.round(e.py/TILE);
+    const inDanger=isDangerCell(ec,er);
+
+    // --- アイテム収集 ---
+    let targetPu=null, bestDist=Infinity;
+    game.powerups.forEach(pu=>{
+      const d=Math.abs(pu.c-ec)+Math.abs(pu.r-er);
+      if(d<bestDist){bestDist=d;targetPu=pu;}
+    });
+
+    // --- 爆弾設置判定 ---
+    const canBomb=e.activeBombs<e.maxBombs&&!game.bombs.some(b=>b.c===ec&&b.r===er);
+    if(canBomb&&!inDanger){
+      const hits=blastTargets(ec,er,e.fireRange,e);
+      const boxCount=getBlastCells({c:ec,r:er,range:e.fireRange}).filter(cl=>game.grid[cl.r]&&game.grid[cl.r][cl.c]===2).length;
+      const shouldBomb=hits>=1||(boxCount>=1&&Math.random()<0.04);
+      if(shouldBomb){
+        game.bombs.push({c:ec,r:er,timer:130+Math.floor(Math.random()*40),range:e.fireRange,owner:'enemy',ownerRef:e});
+        e.activeBombs++;
+      }
+    }
+
+    // --- 移動AI ---
     e.moveTimer--;
-    if(e.moveTimer<=0) {
-      e.moveTimer=Math.floor(15+Math.random()*25);
-      // try to move toward player sometimes
-      if(Math.random()<0.3) {
+    if(e.moveTimer<=0){
+      e.moveTimer=Math.floor(8+Math.random()*16);
+      if(inDanger){
+        // 危険回避：安全な方向を探す
+        const safe=dirMap.map((d,i)=>({i,c:ec+d[0],r:er+d[1]}))
+          .filter(({c,r})=>isWalkable(c,r)&&!isDangerCell(c,r));
+        if(safe.length>0) e.dir=safe[Math.floor(Math.random()*safe.length)].i;
+        else e.dir=Math.floor(Math.random()*4);
+      } else if(targetPu&&bestDist<8&&Math.random()<0.5){
+        // アイテムへ向かう
+        const dc=targetPu.c-ec, dr=targetPu.r-er;
+        if(Math.abs(dc)>Math.abs(dr)) e.dir=dc>0?0:1;
+        else e.dir=dr>0?2:3;
+      } else if(!p.dead&&Math.random()<0.45){
+        // プレイヤー追跡
         const dx=p.px-e.px, dy=p.py-e.py;
         if(Math.abs(dx)>Math.abs(dy)) e.dir=dx>0?0:1;
         else e.dir=dy>0?2:3;
       } else { e.dir=Math.floor(Math.random()*4); }
     }
+
     const [dc,dr]=dirMap[e.dir];
     const prevPx=e.px,prevPy=e.py;
-    moveEnt(e,dc*e.speed,dr*e.speed,true);
+    // 敵は自分の爆弾は通り抜けOK（プレイヤー爆弾はブロック）
+    const curC=Math.round(e.px/TILE),curR=Math.round(e.py/TILE);
+    const isBombPassable=(c,r)=>{
+      const bombs=game.bombs.filter(b=>b.c===c&&b.r===r);
+      if(!bombs.length) return true;
+      if(c===curC&&r===curR) return true; // 自分が今いるマス
+      return false;
+    };
+    const tryMove=(ddx,ddy)=>{
+      const m=7;
+      if(ddx!==0){
+        const nx=e.px+ddx;
+        const r1=Math.floor((e.py+m)/TILE),r2=Math.floor((e.py+TILE-m)/TILE);
+        const col=ddx>0?Math.floor((nx+TILE-m)/TILE):Math.floor((nx+m)/TILE);
+        if(isWalkable(col,r1)&&isWalkable(col,r2)&&isBombPassable(col,r1)&&isBombPassable(col,r2)) e.px=nx;
+      }
+      if(ddy!==0){
+        const ny=e.py+ddy;
+        const c1=Math.floor((e.px+m)/TILE),c2=Math.floor((e.px+TILE-m)/TILE);
+        const row=ddy>0?Math.floor((ny+TILE-m)/TILE):Math.floor((ny+m)/TILE);
+        if(isWalkable(c1,row)&&isWalkable(c2,row)&&isBombPassable(c1,row)&&isBombPassable(c2,row)) e.py=ny;
+      }
+      e.x=Math.round(e.px/TILE);e.y=Math.round(e.py/TILE);
+    };
+    tryMove(dc*e.speed,dr*e.speed);
     if(e.px===prevPx&&e.py===prevPy) e.dir=Math.floor(Math.random()*4);
-    // touch player
+
+    // アイテム取得
+    game.powerups=game.powerups.filter(pu=>{
+      if(pu.c===Math.round(e.px/TILE)&&pu.r===Math.round(e.py/TILE)){
+        if(pu.type==='bomb') e.maxBombs=Math.min(4,e.maxBombs+1);
+        if(pu.type==='fire') e.fireRange=Math.min(5,e.fireRange+1);
+        if(pu.type==='speed') e.speed=Math.min(3.5,e.speed+0.4);
+        return false;
+      }
+      return true;
+    });
+
+    // 体当たり
     if(!p.dead&&Math.hypot(e.px-p.px,e.py-p.py)<TILE*0.65) hitPlayer();
   });
 
