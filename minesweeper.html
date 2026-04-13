@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>マインスイーパー</title>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: #2a2a3e;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  min-height: 100vh; padding: 20px; user-select: none;
+  font-family: 'Press Start 2P', monospace;
+}
+h1 {
+  color: #e94560; font-size: 16px; margin-bottom: 16px;
+  text-shadow: 2px 2px 0 #000; letter-spacing: 2px;
+}
+#diff-row {
+  display: flex; gap: 6px; margin-bottom: 12px;
+}
+.diff-btn {
+  font-family: 'Press Start 2P', monospace; font-size: 7px;
+  padding: 6px 10px; cursor: pointer; color: #000;
+  background: #c0c0c0; border: 3px solid;
+  border-color: #fff #808080 #808080 #fff;
+}
+.diff-btn.active, .diff-btn:active {
+  border-color: #808080 #fff #fff #808080; background: #a0a0a0;
+}
+#ms-frame {
+  background: #c0c0c0;
+  border: 4px solid; border-color: #fff #808080 #808080 #fff;
+  padding: 8px;
+  box-shadow: 4px 4px 0 #000;
+}
+#ms-header {
+  background: #c0c0c0;
+  border: 3px solid; border-color: #808080 #fff #fff #808080;
+  padding: 8px 12px; display: flex; align-items: center;
+  justify-content: space-between; margin-bottom: 8px; gap: 12px;
+}
+.lcd {
+  background: #000; color: #f00;
+  font-family: 'VT323', monospace; font-size: 32px; letter-spacing: 3px;
+  padding: 2px 8px; border: 2px inset #555;
+  min-width: 64px; text-align: right; line-height: 1;
+}
+#face-btn {
+  width: 40px; height: 40px; font-size: 22px; cursor: pointer;
+  background: #c0c0c0; border: 3px solid;
+  border-color: #fff #808080 #808080 #fff;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+#face-btn:active { border-color: #808080 #fff #fff #808080; }
+#board-wrap {
+  border: 3px solid; border-color: #808080 #fff #fff #808080;
+  line-height: 0; display: inline-block; overflow: hidden;
+}
+#board { display: inline-grid; }
+.cell {
+  width: 30px; height: 30px; display: flex;
+  align-items: center; justify-content: center;
+  font-size: 10px; font-weight: bold; cursor: pointer;
+  background: #c0c0c0; border: 2px solid;
+  border-color: #fff #808080 #808080 #fff;
+  font-family: 'Press Start 2P', monospace; position: relative;
+}
+.cell:active { border-color: #808080 #fff #fff #808080; }
+.cell.revealed {
+  background: #d0b896; border: 1px solid #9a8060;
+  cursor: default;
+}
+.cell.mine-hit { background: #e94560 !important; }
+.cell[data-n="1"] { color: #1565c0; }
+.cell[data-n="2"] { color: #2e7d32; }
+.cell[data-n="3"] { color: #c62828; }
+.cell[data-n="4"] { color: #4a148c; }
+.cell[data-n="5"] { color: #bf360c; }
+.cell[data-n="6"] { color: #006064; }
+.cell[data-n="7"] { color: #212121; }
+.cell[data-n="8"] { color: #757575; }
+#msg {
+  color: #ccc; font-size: 7px; text-align: center;
+  margin-top: 12px; min-height: 14px; line-height: 1.8;
+}
+</style>
+</head>
+<body>
+<h1>💣 MINESWEEPER</h1>
+<div id="diff-row">
+  <button class="diff-btn active" id="d0" onclick="setDiff(0)">初級 9×9</button>
+  <button class="diff-btn" id="d1" onclick="setDiff(1)">中級 16×16</button>
+  <button class="diff-btn" id="d2" onclick="setDiff(2)">上級 30×16</button>
+</div>
+<div id="ms-frame">
+  <div id="ms-header">
+    <div class="lcd" id="mine-lcd">010</div>
+    <div id="face-btn" onclick="initGame()">😊</div>
+    <div class="lcd" id="time-lcd">000</div>
+  </div>
+  <div id="board-wrap">
+    <div id="board"></div>
+  </div>
+</div>
+<div id="msg">左クリック: 開く ／ 右クリック: 旗を立てる</div>
+
+<script>
+const DIFFS=[{r:9,c:9,m:10},{r:16,c:16,m:40},{r:16,c:30,m:99}];
+let diff=0,rows,cols,mines;
+let board=[],rev=[],flag=[],mPos=[];
+let state='idle',timer=null,secs=0,first=true;
+
+const fmt=n=>String(Math.min(999,Math.max(-99,n))).padStart(3,'0');
+const idx=(r,c)=>r*cols+c;
+
+function setDiff(d){
+  diff=d;[0,1,2].forEach(i=>document.getElementById('d'+i).classList.toggle('active',i===d));
+  initGame();
+}
+
+function initGame(){
+  clearInterval(timer);secs=0;state='idle';first=true;
+  const cfg=DIFFS[diff];rows=cfg.r;cols=cfg.c;mines=cfg.m;
+  board=Array(rows*cols).fill(0);rev=Array(rows*cols).fill(false);
+  flag=Array(rows*cols).fill(false);mPos=[];
+  document.getElementById('face-btn').textContent='😊';
+  document.getElementById('time-lcd').textContent='000';
+  document.getElementById('mine-lcd').textContent=fmt(mines);
+  document.getElementById('msg').textContent='左クリック: 開く ／ 右クリック: 旗を立てる';
+  const cellSz=Math.max(20,Math.min(30,Math.floor(480/Math.max(cols,rows))));
+  const bd=document.getElementById('board');
+  bd.style.gridTemplateColumns=`repeat(${cols},${cellSz}px)`;
+  bd.innerHTML='';
+  for(let i=0;i<rows*cols;i++){
+    const el=document.createElement('div');
+    el.className='cell';el.dataset.i=i;
+    el.style.cssText=`width:${cellSz}px;height:${cellSz}px;font-size:${Math.max(8,cellSz/3-2)}px`;
+    el.addEventListener('click',()=>onClick(i));
+    el.addEventListener('contextmenu',e=>{e.preventDefault();onRight(i);});
+    el.addEventListener('mousedown',e=>{if(e.button===0&&(state==='idle'||state==='playing'))document.getElementById('face-btn').textContent='😮';});
+    el.addEventListener('mouseup',()=>{if(state==='playing'||state==='idle')document.getElementById('face-btn').textContent='😊';});
+    bd.appendChild(el);
+  }
+}
+
+function nb(i){
+  const r=Math.floor(i/cols),c=i%cols,res=[];
+  for(let dr=-1;dr<=1;dr++)for(let dc=-1;dc<=1;dc++){
+    if(!dr&&!dc)continue;const nr=r+dr,nc=c+dc;
+    if(nr>=0&&nr<rows&&nc>=0&&nc<cols)res.push(nr*cols+nc);
+  }
+  return res;
+}
+
+function placeMines(safe){
+  const safe_nb=nb(safe);
+  let pool=[...Array(rows*cols).keys()].filter(i=>i!==safe&&!safe_nb.includes(i));
+  const needed=Math.min(mines,pool.length);
+  for(let m=0;m<needed;m++){
+    const ri=Math.floor(Math.random()*pool.length);
+    mPos.push(pool[ri]);pool.splice(ri,1);
+  }
+  mPos.forEach(mi=>board[mi]=-1);
+  for(let i=0;i<rows*cols;i++){
+    if(board[i]===-1)continue;
+    board[i]=nb(i).filter(n=>board[n]===-1).length;
+  }
+}
+
+function startTimer(){
+  timer=setInterval(()=>{
+    secs=Math.min(999,secs+1);
+    document.getElementById('time-lcd').textContent=fmt(secs);
+  },1000);
+}
+
+function getCell(i){return document.querySelector(`.cell[data-i="${i}"]`);}
+
+function onClick(i){
+  if(state==='won'||state==='lost')return;
+  if(rev[i]){chord(i);return;}
+  if(flag[i])return;
+  if(first){first=false;state='playing';placeMines(i);startTimer();}
+  if(board[i]===-1){explode(i);return;}
+  flood(i);checkWin();
+}
+
+function flood(i){
+  if(rev[i]||flag[i])return;
+  rev[i]=true;
+  const el=getCell(i);
+  el.classList.add('revealed');
+  if(board[i]>0){el.textContent=board[i];el.dataset.n=board[i];}
+  else el.textContent='';
+  if(board[i]===0)nb(i).forEach(n=>flood(n));
+}
+
+function chord(i){
+  if(!rev[i]||board[i]<=0)return;
+  const neighbors=nb(i);
+  if(neighbors.filter(n=>flag[n]).length===board[i]){
+    let hit=false;
+    neighbors.forEach(n=>{if(!flag[n]&&!rev[n]){if(board[n]===-1)hit=true;else flood(n);}});
+    if(hit){const mi=neighbors.find(n=>!flag[n]&&!rev[n]&&board[n]===-1);if(mi!==undefined)explode(mi);}
+    else checkWin();
+  }
+}
+
+function onRight(i){
+  if(state==='won'||state==='lost'||rev[i])return;
+  if(state==='idle'){state='playing';first=false;placeMines(-1);startTimer();}
+  flag[i]=!flag[i];
+  const el=getCell(i);
+  el.classList.toggle('flagged',flag[i]);
+  el.textContent=flag[i]?'🚩':'';
+  document.getElementById('mine-lcd').textContent=fmt(mines-flag.filter(Boolean).length);
+}
+
+function explode(hitIdx){
+  clearInterval(timer);state='lost';
+  document.getElementById('face-btn').textContent='😵';
+  document.getElementById('msg').textContent='💥 ゲームオーバー！クリックで再スタート';
+  document.getElementById('face-btn').onclick=initGame;
+  mPos.forEach(mi=>{
+    const el=getCell(mi);
+    el.classList.add('revealed');
+    el.textContent='💣';
+    if(mi===hitIdx)el.classList.add('mine-hit');
+  });
+  flag.forEach((f,i)=>{if(f&&board[i]!==-1){const el=getCell(i);el.textContent='❌';}});
+}
+
+function checkWin(){
+  if(rev.filter(r=>!r).length===mines){
+    clearInterval(timer);state='won';
+    document.getElementById('face-btn').textContent='😎';
+    document.getElementById('msg').textContent=`🎉 クリア！ ${secs}秒でした！`;
+    document.getElementById('mine-lcd').textContent='000';
+    mPos.forEach(mi=>{if(!flag[mi]){flag[mi]=true;const el=getCell(mi);el.textContent='🚩';el.classList.add('flagged');}});
+  }
+}
+
+initGame();
+</script>
+</body>
+</html>
