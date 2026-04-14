@@ -193,18 +193,32 @@ function buildMap() {
 }
 
 function spawnEnemies() {
-  const spawns = [[ROWS-2,COLS-2],[ROWS-2,COLS-4],[ROWS-4,COLS-2],[1,COLS-2],[ROWS-4,COLS-4]];
+  // 固定スポーン（プレイヤー開始地点(1,1)から離れた角・中間）
+  const spawns = [[ROWS-2,COLS-2],[ROWS-2,COLS-4],[ROWS-4,COLS-2],[2,COLS-2],[ROWS-4,COLS-4]];
   spawns.forEach(([r,c], i) => {
-    if(game.grid[r][c] === 0) {
-      game.enemies.push({
-        px: c*TILE, py: r*TILE, x:c, y:r,
-        dir: Math.floor(Math.random()*4),
-        speed: 0.9 + i*0.18,
-        moveTimer: Math.floor(Math.random()*40),
-        dead: false, frame: 0, type: i%2, colorIdx: i,
-        activeBombs: 0, maxBombs: 1, fireRange: 1,
-      });
+    // スポーン周囲2マスの壊せるブロックを除去してスペース確保
+    for(let dr=-2;dr<=2;dr++){
+      for(let dc2=-2;dc2<=2;dc2++){
+        const nr=r+dr,nc=c+dc2;
+        if(nr>0&&nr<ROWS-1&&nc>0&&nc<COLS-1&&game.grid[nr][nc]===2)
+          game.grid[nr][nc]=0;
+      }
     }
+    // グリッドが壁なら隣の空きマスを探す
+    let sr=r,sc=c;
+    if(game.grid[sr][sc]!==0){
+      outer:for(let dr=-1;dr<=1;dr++)for(let dc2=-1;dc2<=1;dc2++){
+        if(game.grid[r+dr]?.[c+dc2]===0){sr=r+dr;sc=c+dc2;break outer;}
+      }
+    }
+    game.enemies.push({
+      px: sc*TILE, py: sr*TILE, x:sc, y:sr,
+      dir: Math.floor(Math.random()*4),
+      moveTimer: 0, thinkTimer: 0, fleeTimer: 0,
+      dead: false, frame: 0, type: i%2, colorIdx: i,
+      activeBombs: 0, maxBombs: 1, fireRange: 1,
+      speed: 0.9 + i*0.15,
+    });
   });
 }
 
@@ -306,7 +320,7 @@ function explodeBomb(bomb) {
       }
     }
   }
-  game.explosions.push({cells,timer:45});
+  game.explosions.push({cells,timer:12});
   if(bomb.owner==='player') game.player.activeBombs=Math.max(0,game.player.activeBombs-1);
   else if(bomb.ownerRef) bomb.ownerRef.activeBombs=Math.max(0,(bomb.ownerRef.activeBombs||0)-1);
   game.bombs.forEach(b=>{if(b!==bomb&&cells.some(cl=>cl.c===b.c&&cl.r===b.r)) b.timer=1;});
@@ -423,15 +437,18 @@ function update() {
         const hits=blastTargets(ec,er,e.fireRange,e);
         const boxes=getBlastCells({c:ec,r:er,range:e.fireRange})
           .filter(cl=>game.grid[cl.r]?.[cl.c]===2).length;
-        if(hits>=1||(boxes>=1&&Math.random()<0.03)){
+        // プレイヤーが射程+2マス以内かつ確率制御
+        const playerDist=Math.abs(Math.round(p.px/TILE)-ec)+Math.abs(Math.round(p.py/TILE)-er);
+        const wantBomb=(hits>=1&&playerDist<=e.fireRange+3)||(boxes>=2&&Math.random()<0.015);
+        if(wantBomb){
           // 爆弾を置いた仮定でBFS → 逃げられるか確認
           const fakeBomb={c:ec,r:er,range:e.fireRange,timer:999};
           const escDir=findEscapeDir(ec,er,fakeBomb);
           if(escDir!==-1){
-            game.bombs.push({c:ec,r:er,timer:150,range:e.fireRange,owner:'enemy',ownerRef:e});
+            game.bombs.push({c:ec,r:er,timer:120,range:e.fireRange,owner:'enemy',ownerRef:e});
             e.activeBombs++;
-            e.dir=escDir;     // 即逃走方向へ
-            e.fleeTimer=90;   // 90フレームは逃走モード
+            e.dir=escDir;
+            e.fleeTimer=130;
             e.thinkTimer=999;
           }
         }
