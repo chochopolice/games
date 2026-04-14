@@ -477,14 +477,14 @@
     let CELL = 30;
     const TICK_MS = 180;
     const RAW_MAP = [
-      '###############',
+      '#...G....#....#',
       '#........#....#',
       '#.###.##.#.##.#',
       '#o#........#o.#',
       '#.#.#####.#.#.#',
       '#.#...#...#.#.#',
       '#..##.#.##....#',
-      '###...G...###.#',
+      '###.......###.#',
       '#....##.##....#',
       '#.#...P...#.#.#',
       '#.#.#####.#.#.#',
@@ -512,7 +512,7 @@
     const resetBtn = document.getElementById('resetBtn');
 
     let state;
-    let nextDir = 'left';
+    let nextDir = 'none';
     let timer = null;
     let pointerStartX = 0;
     let pointerStartY = 0;
@@ -572,7 +572,7 @@
 
       return {
         grid,
-        pacman: { ...pacman, dir: 'left' },
+        pacman: { ...pacman, dir: 'none' },
         ghost: { ...ghostStart, dir: 'left' },
         score: 0,
         lives: 3,
@@ -685,7 +685,7 @@
 
     function loseLifeKeepBoard() {
       const fresh = getInitialState();
-      state.pacman = { ...fresh.pacman, dir: state.pacman.dir };
+      state.pacman = { ...fresh.pacman, dir: state.pacman.dir || 'none' };
       state.ghost = { ...fresh.ghost, dir: 'left' };
       state.poweredTicks = 0;
     }
@@ -708,12 +708,14 @@
         pacman.dir = desired.name;
       }
 
-      const current = DIRS[pacman.dir] || DIRS.left;
-      const nextX = pacman.x + current.x;
-      const nextY = pacman.y + current.y;
-      if (!isWall(grid, nextX, nextY)) {
-        pacman.x = nextX;
-        pacman.y = nextY;
+      const current = DIRS[pacman.dir] || null;
+      if (current) {
+        const nextX = pacman.x + current.x;
+        const nextY = pacman.y + current.y;
+        if (!isWall(grid, nextX, nextY)) {
+          pacman.x = nextX;
+          pacman.y = nextY;
+        }
       }
 
       const tile = grid[pacman.y][pacman.x];
@@ -799,7 +801,7 @@
 
     function resetGame() {
       state = getInitialState();
-      nextDir = 'left';
+      nextDir = 'none';
       render();
       syncTimer();
     }
