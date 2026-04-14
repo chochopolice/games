@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>Pac-Man風 モバイルゲーム</title>
+  <style>
+    :root{
+      --bg:#08101d;
+      --panel:#121c31;
+      --panel2:#1a2744;
+      --wall:#346dff;
+      --dot:#fff0a8;
+      --power:#7df9ff;
+      --player:#ffd84d;
+      --ghost:#ff6aa9;
+      --ghostScared:#7df9ff;
+      --text:#eef3ff;
+      --muted:#9fb0df;
+      --ok:#67e8a5;
+      --danger:#ff7676;
+    }
+    *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+    html,body{
+      margin:0;padding:0;background:radial-gradient(circle at top,#162443 0%,var(--bg) 60%);
+      color:var(--text);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+      touch-action:manipulation;overscroll-behavior:none;
+    }
+    body{min-height:100vh;padding:10px;}
+    .app{
+      width:min(720px,100%);
+      margin:0 auto;
+      display:grid;
+      gap:10px;
+      grid-template-areas:
+        "panel"
+        "game"
+        "actions";
+    }
+    .panel,.gameWrap,.actions{
+      background:rgba(18,28,49,.96);
+      border:1px solid rgba(255,255,255,.06);
+      border-radius:20px;
+      box-shadow:0 18px 40px rgba(0,0,0,.35);
+    }
+    .panel{grid-area:panel;padding:14px;}
+    .gameWrap{
+      grid-area:game;
+      padding:10px;
+      display:flex;align-items:center;justify-content:center;
+      touch-action:none; user-select:none; -webkit-user-select:none;
+      overflow:hidden;
+    }
+    .actions{grid-area:actions;padding:12px;}
+    h1{margin:0 0 6px;font-size:24px;line-height:1.2;}
+    .sub{color:var(--muted);font-size:13px;line-height:1.5;}
+    .stats{
+      display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px;
+    }
+    .stat{
+      background:var(--panel2);border-radius:16px;padding:10px;
+    }
+    .label{font-size:11px;color:var(--muted);margin-bottom:4px;}
+    .value{font-size:22px;font-weight:800;}
+    .progressBox{
+      margin-top:10px;background:var(--panel2);border-radius:16px;padding:10px;
+    }
+    .progressRow{
+      display:flex;justify-content:space-between;gap:8px;font-size:13px;
+    }
+    .progress{
+      height:10px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;margin-top:8px;
+    }
+    .bar{
+      height:100%;width:0%;
+      background:linear-gradient(90deg,var(--ok),var(--power));
+      transition:width .16s linear;
+    }
+    .status{
+      margin-top:10px;background:var(--panel2);border-radius:16px;padding:12px;font-size:14px;
+      min-height:44px;display:flex;align-items:center;
+    }
+    .buttonRow{
+      display:grid;grid-template-columns:1fr 1fr;gap:10px;
+    }
+    button{
+      appearance:none;border:0;border-radius:16px;padding:14px 12px;font-size:16px;font-weight:800;
+      color:var(--text);background:#2b3a66;min-height:52px;touch-action:manipulation;
+    }
+    button:active{transform:scale(.98);}
+    .start{background:#3957d7;}
+    .reset{background:#8f3a51;}
+    .mobileHelp{
+      margin-top:10px;color:var(--muted);font-size:13px;line-height:1.6;
+    }
+    #game{
+      background:#050914;border-radius:20px;padding:10px;display:grid;gap:0;
+      box-shadow:inset 0 0 20px rgba(0,0,0,.35);
+      touch-action:none;
+    }
+    .cell{
+      position:relative;display:flex;align-items:center;justify-content:center;
+      overflow:hidden;background:#050914;
+    }
+    .wall{
+      background:var(--wall);border-radius:7px;
+      box-shadow:inset 0 0 0 2px rgba(255,255,255,.08);
+    }
+    .dot{width:6px;height:6px;border-radius:50%;background:var(--dot);}
+    .power{width:14px;height:14px;border-radius:50%;background:var(--power);animation:pulse .8s infinite;}
+    @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.25)}}
+    .player{
+      width:22px;height:22px;border-radius:50%;
+      background:conic-gradient(from 40deg, transparent 0 50deg, var(--player) 50deg 360deg);
+      position:relative;animation:chomp .35s infinite;
+    }
+    .player::after{
+      content:"";position:absolute;right:3px;top:9px;width:3px;height:3px;border-radius:50%;background:#1d2333;
+    }
+    .dir-right{transform:rotate(0deg)}
+    .dir-left{transform:rotate(180deg)}
+    .dir-up{transform:rotate(270deg)}
+    .dir-down{transform:rotate(90deg)}
+    .dir-none{transform:rotate(0deg)}
+    @keyframes chomp{0%,100%{transform:scale(1)}50%{transform:scale(.92)}}
+    .ghost{width:22px;height:22px;position:relative;animation:float .7s infinite ease-in-out;}
+    .ghostBody{
+      position:absolute;left:0;top:2px;width:22px;height:18px;border-radius:12px 12px 6px 6px;overflow:hidden;background:var(--ghost);
+    }
+    .ghost.scared .ghostBody{background:var(--ghostScared);}
+    .ghostBody::after{
+      content:"";position:absolute;left:0;right:0;bottom:-2px;height:8px;
+      background:radial-gradient(circle at 3px 0, transparent 5px, currentColor 5px) 0 0 / 7px 8px repeat-x;
+      color:inherit;opacity:.9;
+    }
+    .eyes{position:absolute;top:7px;left:5px;display:flex;gap:4px;}
+    .eye{width:4px;height:6px;border-radius:999px;background:#fff;position:relative;}
+    .eye::after{content:"";position:absolute;left:1px;top:1px;width:2px;height:2px;border-radius:50%;background:#222;}
+    @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
+    .hintOverlay{
+      position:absolute;inset:0;display:none;align-items:center;justify-content:center;pointer-events:none;
+    }
+    .hintOverlay.show{display:flex;}
+    .hintBubble{
+      background:rgba(0,0,0,.55);backdrop-filter:blur(4px);
+      border:1px solid rgba(255,255,255,.12);
+      border-radius:18px;padding:12px 14px;font-size:14px;text-align:center;line-height:1.6;
+    }
+    @media (min-width: 821px){
+      body{padding:18px;}
+      .app{
+        width:min(1080px,100%);
+        grid-template-columns:320px 1fr;
+        grid-template-areas:
+          "panel game"
+          "actions game";
+      }
+      .panel{padding:18px;}
+      .actions{padding:18px;}
+      h1{font-size:28px;}
+      .mobileHelp{font-size:14px;}
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <section class="panel">
+      <h1>Pac-Man風 モバイル版</h1>
+      <div class="sub">スマホでは盤面をタップして開始、スワイプで方向転換します。</div>
+      <div class="stats">
+        <div class="stat">
+          <div class="label">Score</div>
+          <div class="value" id="score">0</div>
+        </div>
+        <div class="stat">
+          <div class="label">Lives</div>
+          <div class="value" id="lives">3</div>
+        </div>
+        <div class="stat">
+          <div class="label">Dots</div>
+          <div class="value" id="dots">0</div>
+        </div>
+      </div>
+      <div class="progressBox">
+        <div class="progressRow"><span>進行度</span><span id="progressText">0%</span></div>
+        <div class="progress"><div class="bar" id="progressBar"></div></div>
+      </div>
+      <div class="status" id="status">盤面をタップして開始</div>
+    </section>
+
+    <section class="gameWrap">
+      <div style="position:relative;">
+        <div id="game"></div>
+        <div class="hintOverlay show" id="hintOverlay">
+          <div class="hintBubble">盤面をタップして開始<br>スワイプで移動</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="actions">
+      <div class="buttonRow">
+        <button class="start" id="startBtn">Start / Pause</button>
+        <button class="reset" id="resetBtn">Reset</button>
+      </div>
+      <div class="mobileHelp">
+        スマホでは矢印キーは使いません。盤面を軽くタップで開始し、上下左右へスワイプして動かします。
+      </div>
+    </section>
+  </div>
+
+  <script>
+    let CELL = 28;
+    const TICK_MS = 180;
+
+    const RAW_MAP = [
+      '#...G....#....#',
+      '#.###.##.#.##.#',
+      '#o#........#o.#',
+      '#.#.#####.#.#.#',
+      '#.#...#...#.#.#',
+      '#..##.#.##....#',
+      '###.......###.#',
+      '#....##.##....#',
+      '#.#...P...#.#.#',
+      '#.#.#####.#.#.#',
+      '#o..........o.#',
+      '#.##.#.#.#.##.#',
+      '#....#...#....#',
+      '###############'
+    ];
+
+    const DIRS = {
+      up: { x: 0, y: -1, name: 'up' },
+      down: { x: 0, y: 1, name: 'down' },
+      left: { x: -1, y: 0, name: 'left' },
+      right: { x: 1, y: 0, name: 'right' }
+    };
+
+    const gameEl = document.getElementById('game');
+    const scoreEl = document.getElementById('score');
+    const livesEl = document.getElementById('lives');
+    const dotsEl = document.getElementById('dots');
+    const statusEl = document.getElementById('status');
+    const progressBarEl = document.getElementById('progressBar');
+    const progressTextEl = document.getElementById('progressText');
+    const startBtn = document.getElementById('startBtn');
+    const resetBtn = document.getElementById('resetBtn');
+    const hintOverlay = document.getElementById('hintOverlay');
+
+    let state;
+    let nextDir = 'none';
+    let timer = null;
+    let pointerStartX = 0;
+    let pointerStartY = 0;
+    let activePointerId = null;
+
+    function cloneMap(map){
+      return map.map(row => row.split(''));
+    }
+
+    function findChar(grid, char){
+      for(let y = 0; y < grid.length; y++){
+        for(let x = 0; x < grid[y].length; x++){
+          if(grid[y][x] === char) return { x, y };
+        }
+      }
+      return { x: 1, y: 1 };
+    }
+
+    function countDots(grid){
+      let total = 0;
+      grid.forEach(row => row.forEach(cell => {
+        if(cell === '.' || cell === 'o') total += 1;
+      }));
+      return total;
+    }
+
+    function isWall(grid, x, y){
+      return !!(grid[y] && grid[y][x] === '#');
+    }
+
+    function randomGhostStep(grid, ghost, pacman){
+      const choices = Object.values(DIRS)
+        .map(dir => ({ ...dir, x2: ghost.x + dir.x, y2: ghost.y + dir.y }))
+        .filter(dir => !isWall(grid, dir.x2, dir.y2));
+
+      if(!choices.length) return ghost;
+
+      const towardPacman = [...choices].sort((a, b) => {
+        const da = Math.abs(a.x2 - pacman.x) + Math.abs(a.y2 - pacman.y);
+        const db = Math.abs(b.x2 - pacman.x) + Math.abs(b.y2 - pacman.y);
+        return da - db;
+      });
+
+      const chosen = Math.random() < 0.7
+        ? towardPacman[0]
+        : choices[Math.floor(Math.random() * choices.length)];
+
+      return { x: chosen.x2, y: chosen.y2, dir: chosen.name };
+    }
+
+    function getInitialState(){
+      const grid = cloneMap(RAW_MAP);
+      const pacman = findChar(grid, 'P');
+      const ghostStart = findChar(grid, 'G');
+      grid[pacman.y][pacman.x] = ' ';
+      grid[ghostStart.y][ghostStart.x] = ' ';
+
+      const totalDots = countDots(grid);
+
+      return {
+        grid,
+        pacman: { ...pacman, dir: 'none' },
+        ghost: { ...ghostStart, dir: 'left' },
+        score: 0,
+        lives: 3,
+        remainingDots: totalDots,
+        totalDots,
+        running: false,
+        status: '盤面をタップして開始',
+        poweredTicks: 0,
+        gameOver: false,
+        win: false
+      };
+    }
+
+    function drawPlayer(dir){
+      const el = document.createElement('div');
+      el.className = `player dir-${dir || 'none'}`;
+      return el;
+    }
+
+    function drawGhost(scared){
+      const wrap = document.createElement('div');
+      wrap.className = `ghost${scared ? ' scared' : ''}`;
+      wrap.style.color = scared ? 'var(--ghostScared)' : 'var(--ghost)';
+      wrap.innerHTML = `
+        <div class="ghostBody"></div>
+        <div class="eyes">
+          <div class="eye"></div>
+          <div class="eye"></div>
+        </div>
+      `;
+      return wrap;
+    }
+
+    function updateCellSize(){
+      const cols = RAW_MAP[0].length;
+      const rows = RAW_MAP.length;
+      const horizontal = Math.min(window.innerWidth - 36, 560);
+      const vertical = Math.min(window.innerHeight * 0.48, 560);
+      const cellByWidth = Math.floor((horizontal - 20) / cols);
+      const cellByHeight = Math.floor((vertical - 20) / rows);
+      CELL = Math.max(20, Math.min(32, cellByWidth, cellByHeight));
+      if(state) render();
+    }
+
+    function render(){
+      const cols = state.grid[0].length;
+      gameEl.style.gridTemplateColumns = `repeat(${cols}, ${CELL}px)`;
+      gameEl.innerHTML = '';
+
+      for(let y = 0; y < state.grid.length; y++){
+        for(let x = 0; x < state.grid[y].length; x++){
+          const cell = document.createElement('div');
+          cell.className = 'cell';
+          cell.style.width = CELL + 'px';
+          cell.style.height = CELL + 'px';
+
+          const tile = state.grid[y][x];
+          const isPacman = state.pacman.x === x && state.pacman.y === y;
+          const isGhost = state.ghost.x === x && state.ghost.y === y;
+          const scared = state.poweredTicks > 0;
+
+          if(tile === '#') cell.classList.add('wall');
+          if(!isPacman && !isGhost && tile === '.'){
+            const dot = document.createElement('div');
+            dot.className = 'dot';
+            cell.appendChild(dot);
+          }
+          if(!isPacman && !isGhost && tile === 'o'){
+            const power = document.createElement('div');
+            power.className = 'power';
+            cell.appendChild(power);
+          }
+          if(isPacman) cell.appendChild(drawPlayer(state.pacman.dir));
+          if(isGhost) cell.appendChild(drawGhost(scared));
+
+          gameEl.appendChild(cell);
+        }
+      }
+
+      scoreEl.textContent = state.score;
+      livesEl.textContent = state.lives;
+      dotsEl.textContent = state.remainingDots;
+      statusEl.textContent = state.status;
+
+      const progress = Math.round(((state.totalDots - state.remainingDots) / state.totalDots) * 100);
+      progressBarEl.style.width = progress + '%';
+      progressTextEl.textContent = progress + '%';
+
+      const showHint = !state.running && !state.gameOver && !state.win && state.pacman.dir === 'none';
+      hintOverlay.classList.toggle('show', showHint);
+    }
+
+    function syncTimer(){
+      if(timer) clearInterval(timer);
+      if(state.running && !state.gameOver && !state.win){
+        timer = setInterval(tick, TICK_MS);
+      }
+    }
+
+    function loseLifeKeepBoard(){
+      const fresh = getInitialState();
+      state.pacman = { ...fresh.pacman, dir: state.pacman.dir || 'none' };
+      state.ghost = { ...fresh.ghost, dir: 'left' };
+      state.poweredTicks = 0;
+    }
+
+    function tick(){
+      const grid = state.grid.map(row => [...row]);
+      let pacman = { ...state.pacman };
+      let ghost = { ...state.ghost };
+      let score = state.score;
+      let lives = state.lives;
+      let remainingDots = state.remainingDots;
+      let poweredTicks = Math.max(0, state.poweredTicks - 1);
+      let running = state.running;
+      let status = state.status;
+      let gameOver = state.gameOver;
+      let win = state.win;
+
+      const desired = DIRS[nextDir];
+      if(desired && !isWall(grid, pacman.x + desired.x, pacman.y + desired.y)){
+        pacman.dir = desired.name;
+      }
+
+      const current = DIRS[pacman.dir] || null;
+      if(current){
+        const nextX = pacman.x + current.x;
+        const nextY = pacman.y + current.y;
+        if(!isWall(grid, nextX, nextY)){
+          pacman.x = nextX;
+          pacman.y = nextY;
+        }
+      }
+
+      const tile = grid[pacman.y][pacman.x];
+      if(tile === '.'){
+        grid[pacman.y][pacman.x] = ' ';
+        score += 10;
+        remainingDots -= 1;
+      } else if(tile === 'o'){
+        grid[pacman.y][pacman.x] = ' ';
+        score += 50;
+        remainingDots -= 1;
+        poweredTicks = 24;
+        status = 'パワー状態。ゴーストを食べられる';
+      }
+
+      ghost = randomGhostStep(grid, ghost, pacman);
+
+      if(ghost.x === pacman.x && ghost.y === pacman.y){
+        if(poweredTicks > 0){
+          score += 200;
+          const restart = findChar(cloneMap(RAW_MAP), 'G');
+          ghost = { ...restart, dir: 'left' };
+          status = 'ゴーストを食べた';
+        } else {
+          lives -= 1;
+          if(lives <= 0){
+            running = false;
+            gameOver = true;
+            status = 'Game Over';
+          } else {
+            state.grid = grid;
+            state.score = score;
+            state.lives = lives;
+            state.remainingDots = remainingDots;
+            state.status = `ミス。残り ${lives}`;
+            state.poweredTicks = 0;
+            loseLifeKeepBoard();
+            render();
+            syncTimer();
+            return;
+          }
+        }
+      }
+
+      if(remainingDots <= 0){
+        running = false;
+        win = true;
+        status = 'Stage Clear!';
+      } else if(!gameOver && poweredTicks === 0 && status === 'パワー状態。ゴーストを食べられる'){
+        status = 'プレイ中';
+      }
+
+      state = {
+        ...state,
+        grid,
+        pacman,
+        ghost,
+        score,
+        lives,
+        remainingDots,
+        poweredTicks,
+        running,
+        status,
+        gameOver,
+        win
+      };
+
+      render();
+      syncTimer();
+    }
+
+    function toggleStartPause(){
+      if(state.gameOver || state.win){
+        state.status = 'Resetで再開';
+        render();
+        return;
+      }
+      state.running = !state.running;
+      state.status = state.running ? (state.pacman.dir === 'none' ? 'スワイプで移動開始' : 'プレイ中') : '一時停止中';
+      render();
+      syncTimer();
+    }
+
+    function resetGame(){
+      state = getInitialState();
+      nextDir = 'none';
+      render();
+      syncTimer();
+    }
+
+    function bindPress(el, handler){
+      let touched = false;
+
+      el.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        touched = true;
+        handler(e);
+        setTimeout(() => { touched = false; }, 400);
+      }, { passive: false });
+
+      el.addEventListener('click', (e) => {
+        if(touched) return;
+        handler(e);
+      });
+    }
+
+    function handleBoardGestureEnd(clientX, clientY){
+      const dx = clientX - pointerStartX;
+      const dy = clientY - pointerStartY;
+      const absX = Math.abs(dx);
+      const absY = Math.abs(dy);
+
+      if(Math.max(absX, absY) < 14){
+        if(!state.running && !state.gameOver && !state.win){
+          toggleStartPause();
+        }
+        return;
+      }
+
+      if(absX > absY){
+        nextDir = dx > 0 ? 'right' : 'left';
+      } else {
+        nextDir = dy > 0 ? 'down' : 'up';
+      }
+
+      if(!state.running && !state.gameOver && !state.win){
+        toggleStartPause();
+      } else {
+        state.status = 'プレイ中';
+        render();
+      }
+    }
+
+    gameEl.addEventListener('pointerdown', (e) => {
+      activePointerId = e.pointerId;
+      pointerStartX = e.clientX;
+      pointerStartY = e.clientY;
+    });
+
+    gameEl.addEventListener('pointerup', (e) => {
+      if(activePointerId !== null && e.pointerId !== activePointerId) return;
+      handleBoardGestureEnd(e.clientX, e.clientY);
+      activePointerId = null;
+    });
+
+    gameEl.addEventListener('pointercancel', () => {
+      activePointerId = null;
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if(e.key === 'ArrowUp') { e.preventDefault(); nextDir = 'up'; }
+      if(e.key === 'ArrowDown') { e.preventDefault(); nextDir = 'down'; }
+      if(e.key === 'ArrowLeft') { e.preventDefault(); nextDir = 'left'; }
+      if(e.key === 'ArrowRight') { e.preventDefault(); nextDir = 'right'; }
+      if(e.key === ' ') {
+        e.preventDefault();
+        toggleStartPause();
+      }
+    });
+
+    bindPress(startBtn, toggleStartPause);
+    bindPress(resetBtn, resetGame);
+
+    window.addEventListener('resize', updateCellSize);
+
+    updateCellSize();
+    resetGame();
+  </script>
+</body>
+</html>
