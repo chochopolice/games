@@ -205,7 +205,10 @@
     border-radius: 4px;
   }
 
-  .level-bar-wrap {
+  .btn-rotate-label {
+    font-size: 10px;
+    letter-spacing: 0;
+  }
     height: 3px;
     background: rgba(0,255,180,0.1);
     margin-top: 4px;
@@ -271,12 +274,10 @@
   <!-- Controls -->
   <div class="controls">
     <div class="ctrl-row">
-      <button class="btn" id="btn-rotate">↑</button>
-    </div>
-    <div class="ctrl-row">
       <button class="btn" id="btn-left">←</button>
       <button class="btn" id="btn-down">↓</button>
       <button class="btn" id="btn-right">→</button>
+      <button class="btn btn-rotate-label" id="btn-rotate">回転</button>
     </div>
     <div class="ctrl-row">
       <button class="btn btn-hold" id="btn-hold">HOLD</button>
@@ -567,13 +568,11 @@ btnDown.addEventListener('touchstart', e=>{
 }, {passive:false});
 ['touchend','touchcancel'].forEach(ev=>btnDown.addEventListener(ev, ()=>clearInterval(downInterval)));
 
-btnPress(document.getElementById('btn-left'), ()=>{ if(valid(piece.matrix, piece.x-1, piece.y)) piece.x--; });
-btnPress(document.getElementById('btn-right'), ()=>{ if(valid(piece.matrix, piece.x+1, piece.y)) piece.x++; });
 btnPress(document.getElementById('btn-rotate'), doRotate);
 btnPress(document.getElementById('btn-drop'), ()=>{ piece.y=ghostY(); lock(); });
 btnPress(document.getElementById('btn-hold'), doHold);
 
-// Left/right repeat on hold
+// Left/right: first move on touchstart, then repeat
 ['btn-left','btn-right'].forEach(id=>{
   const b=document.getElementById(id);
   let iv=null;

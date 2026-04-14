@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Dr. PILL</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{
+  height:100%;background:#0a0a1a;
+  font-family:'Press Start 2P',monospace;color:#fff;
+  overflow:hidden;touch-action:none;
+  -webkit-tap-highlight-color:transparent;user-select:none;
+}
+#root{display:flex;flex-direction:column;align-items:center;height:100%;padding:6px 0 4px;}
+
+/* Top bar */
+#topbar{
+  display:flex;align-items:center;justify-content:space-between;
+  width:100%;max-width:360px;padding:0 10px;margin-bottom:5px;
+}
+#topbar h1{font-size:13px;letter-spacing:2px;}
+#topbar h1 span{color:#ff3c5f;}
+#pauseBtn{
+  background:#111830;border:2px solid #223;border-radius:5px;
+  color:#888;font-family:'Press Start 2P',monospace;font-size:7px;
+  padding:5px 7px;cursor:pointer;
+}
+
+/* Stats */
+#stats{
+  display:flex;gap:6px;margin-bottom:5px;
+  width:100%;max-width:360px;padding:0 10px;
+}
+.stat{
+  background:#111830;border:2px solid #1a2448;border-radius:5px;
+  padding:4px 6px;text-align:center;flex:1;
+}
+.stat-label{font-size:5px;color:#445;margin-bottom:3px;}
+.stat-val{font-size:13px;}
+#nextBox{
+  background:#111830;border:2px solid #1a2448;border-radius:5px;
+  padding:3px 6px;text-align:center;
+}
+
+/* Board */
+#canvas-wrap{
+  position:relative;border:3px solid #1a2448;border-radius:7px;
+  overflow:hidden;background:#080c1a;flex-shrink:0;
+}
+canvas{display:block;}
+
+/* Overlay */
+#overlay{
+  position:absolute;inset:0;background:rgba(5,8,20,0.93);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:14px;text-align:center;padding:20px;
+}
+#overlay h2{font-size:13px;line-height:1.8;}
+#overlay p{font-size:7px;color:#4a6fa5;line-height:2.2;}
+.ovBtn{
+  font-family:'Press Start 2P',monospace;font-size:10px;
+  background:#182050;border:2px solid #3ca8ff;color:#fff;
+  padding:12px 28px;border-radius:6px;cursor:pointer;
+}
+
+/* Controls */
+#controls{
+  display:flex;justify-content:space-between;align-items:center;
+  width:100%;max-width:360px;padding:0 12px;margin-top:8px;
+}
+.btn-group{display:flex;gap:8px;}
+.ctrl-btn{
+  background:#111830;border:2px solid #1e2a5e;border-radius:10px;
+  color:#ddd;font-size:22px;display:flex;align-items:center;justify-content:center;
+  cursor:pointer;flex-shrink:0;transition:background 0.06s;
+}
+.ctrl-btn:active,.ctrl-btn.pressed{background:#1e3080;border-color:#3ca8ff;color:#fff;}
+#btnDrop{
+  background:#110f28;border:2px solid #2a1a5e;border-radius:10px;
+  color:#ffd93d;font-size:24px;display:flex;align-items:center;justify-content:center;
+  cursor:pointer;flex-shrink:0;
+}
+#btnDrop:active,#btnDrop.pressed{background:#251060;border-color:#ffd93d;}
+</style>
+</head>
+<body>
+<div id="root">
+  <div id="topbar">
+    <h1>Dr.<span>PILL</span></h1>
+    <button id="pauseBtn">⏸ PAUSE</button>
+  </div>
+  <div id="stats">
+    <div class="stat"><div class="stat-label">SCORE</div><div class="stat-val" id="elScore">0</div></div>
+    <div class="stat"><div class="stat-label">LEVEL</div><div class="stat-val" id="elLevel">1</div></div>
+    <div class="stat" style="color:#ff3c5f"><div class="stat-label">VIRUS</div><div class="stat-val" id="elVirus">0</div></div>
+    <div id="nextBox"><div class="stat-label">NEXT</div><canvas id="nc" width="48" height="22"></canvas></div>
+  </div>
+  <div id="canvas-wrap">
+    <canvas id="gc"></canvas>
+    <div id="overlay">
+      <h2>Dr. PILL</h2>
+      <p>4つ同じ色を並べて<br>ウイルスを全滅させよう！</p>
+      <button class="ovBtn" id="btnStart">START</button>
+    </div>
+  </div>
+  <div id="controls">
+    <div class="btn-group">
+      <div class="ctrl-btn" id="btnL">◀</div>
+      <div class="ctrl-btn" id="btnR">▶</div>
+    </div>
+    <div class="btn-group">
+      <div class="ctrl-btn" id="btnRot">↺</div>
+      <div id="btnDrop">▼</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── sizing ──
+const COLS=8,ROWS=14;
+let CS=24;
+
+function calcCS(){
+  const vw=window.innerWidth, vh=window.innerHeight;
+  const reserved=6+26+5+30+5+8+68+12; // topbar,stats,gaps,controls
+  const avH=vh-reserved;
+  let cs=Math.floor(Math.min((Math.min(vw,360)-20)/COLS, avH/ROWS));
+  return Math.max(cs,18);
+}
+
+const gc=document.getElementById('gc');
+const ctx=gc.getContext('2d');
+const nc=document.getElementById('nc');
+const nctx=nc.getContext('2d');
+
+function applySize(){
+  CS=calcCS();
+  gc.width=COLS*CS; gc.height=ROWS*CS;
+  const bs=Math.max(50,Math.min(66,CS*2.6))|0;
+  document.querySelectorAll('.ctrl-btn').forEach(b=>{b.style.width=bs+'px';b.style.height=bs+'px';});
+  document.getElementById('btnDrop').style.width=bs+'px';
+  document.getElementById('btnDrop').style.height=bs+'px';
+}
+applySize();
+window.addEventListener('resize',()=>{applySize();render(true);});
+
+// ── constants ──
+const COLORS=['R','B','Y'];
+const CFILL={R:'#ff3c5f',B:'#3ca8ff',Y:'#ffd93d'};
+const SPEED=[900,720,580,460,370,300,240,190,150,120,95];
+
+// ── state ──
+let board,pill,nextColors,score,level,virusLeft;
+let phase='idle';
+let dropAcc=0,lastTs=0,flashData=null,flashAcc=0,flashTick=0,raf;
+
+// ── init ──
+function init(lvl){
+  level=lvl;score=0;
+  board=[];for(let r=0;r<ROWS;r++){board[r]=[];for(let c=0;c<COLS;c++)board[r][c]=null;}
+  virusLeft=0;placeViruses();
+  nextColors=rndC();phase='play';dropAcc=0;flashData=null;
+  document.getElementById('overlay').style.display='none';
+  updateUI();spawnPill();drawNext();
+  cancelAnimationFrame(raf);lastTs=performance.now();
+  raf=requestAnimationFrame(tick);
+}
+
+function rndC(){return[COLORS[Math.random()*3|0],COLORS[Math.random()*3|0]];}
+
+function placeViruses(){
+  const n=Math.min(4+level*2,20);let placed=0,tries=0;
+  while(placed<n&&tries<2000){
+    tries++;
+    const r=(ROWS/2|0)+(Math.random()*(ROWS/2)|0),c=Math.random()*COLS|0;
+    if(!board[r][c]){board[r][c]={color:COLORS[Math.random()*3|0],kind:'virus',half:'O'};placed++;virusLeft++;}
+  }
+}
+
+function spawnPill(){
+  const[ca,cb]=nextColors;nextColors=rndC();drawNext();
+  const col=(COLS/2|0)-1;
+  pill={segs:[{r:0,c:col,color:ca,half:'L'},{r:0,c:col+1,color:cb,half:'R'}],rot:0};
+  if(!canPlace(pill.segs)){pill=null;phase='over';showOv('GAME OVER',`スコア: ${score}`,'RETRY',()=>init(level));}
+}
+
+function inB(r,c){return r>=0&&r<ROWS&&c>=0&&c<COLS;}
+function isFree(r,c){return inB(r,c)&&!board[r][c];}
+function canPlace(segs){return segs.every(s=>isFree(s.r,s.c));}
+
+function shift(dr,dc){
+  const ns=pill.segs.map(s=>({...s,r:s.r+dr,c:s.c+dc}));
+  if(canPlace(ns)){pill.segs=ns;return true;}return false;
+}
+
+function rotate(){
+  if(!pill)return;
+  const[a,b]=pill.segs;let ns;
+  if(pill.rot===0){
+    ns=[{...a,half:'U'},{r:a.r+1,c:a.c,color:b.color,half:'D'}];
+    if(!canPlace(ns)){ns=ns.map(s=>({...s,c:s.c-1}));if(!canPlace(ns))return;}
+    pill.rot=1;
+  }else{
+    ns=[{...a,half:'L'},{r:a.r,c:a.c+1,color:b.color,half:'R'}];
+    if(!canPlace(ns)){ns=ns.map(s=>({...s,c:s.c-1}));if(!canPlace(ns))return;}
+    pill.rot=0;
+  }
+  pill.segs=ns;
+}
+
+function lock(){
+  pill.segs.forEach(s=>{board[s.r][s.c]={color:s.color,kind:'pill',half:s.half};});
+  pill=null;startClear();
+}
+
+function startClear(){
+  const m=getMatches();let cnt=0,vcnt=0;
+  for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++){if(m[r][c]){cnt++;if(board[r][c]?.kind==='virus')vcnt++;}}
+  if(!cnt){
+    if(virusLeft<=0){phase='win';showOv('STAGE CLEAR!',`スコア: ${score}`,'NEXT LEVEL',()=>init(level+1));return;}
+    spawnPill();return;
+  }
+  score+=([0,100,200,400,800,1600,3200][Math.min(cnt,6)])+vcnt*300;
+  virusLeft-=vcnt;updateUI();
+  flashData=m;flashAcc=0;flashTick=0;phase='flash';
+}
+
+function getMatches(){
+  const m=[];for(let r=0;r<ROWS;r++){m[r]=[];for(let c=0;c<COLS;c++)m[r][c]=false;}
+  for(let r=0;r<ROWS;r++){let run=1;for(let c=1;c<COLS;c++){if(board[r][c]&&board[r][c-1]&&board[r][c].color===board[r][c-1].color)run++;else{if(run>=4)for(let k=c-run;k<c;k++)m[r][k]=true;run=1;}}if(run>=4)for(let k=COLS-run;k<COLS;k++)m[r][k]=true;}
+  for(let c=0;c<COLS;c++){let run=1;for(let r=1;r<ROWS;r++){if(board[r][c]&&board[r-1][c]&&board[r][c].color===board[r-1][c].color)run++;else{if(run>=4)for(let k=r-run;k<r;k++)m[k][c]=true;run=1;}}if(run>=4)for(let k=ROWS-run;k<ROWS;k++)m[k][c]=true;}
+  return m;
+}
+
+function removeCells(){
+  for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++){if(flashData[r][c])board[r][c]=null;}
+  fixOrphans();flashData=null;applyGravity();
+}
+
+function fixOrphans(){
+  for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++){
+    const cell=board[r][c];if(!cell||cell.kind!=='pill')continue;let o=false;
+    if(cell.half==='L'&&!(c+1<COLS&&board[r][c+1]?.half==='R'))o=true;
+    if(cell.half==='R'&&!(c-1>=0&&board[r][c-1]?.half==='L'))o=true;
+    if(cell.half==='U'&&!(r+1<ROWS&&board[r+1]?.[c]?.half==='D'))o=true;
+    if(cell.half==='D'&&!(r-1>=0&&board[r-1]?.[c]?.half==='U'))o=true;
+    if(o)board[r][c]={...cell,half:'O'};
+  }
+}
+
+function applyGravity(){
+  let moved=false;
+  for(let r=ROWS-2;r>=0;r--)for(let c=0;c<COLS;c++){
+    const cell=board[r][c];if(!cell||cell.kind==='virus')continue;
+    if(cell.half==='O'&&!board[r+1][c]){board[r+1][c]=cell;board[r][c]=null;moved=true;}
+    else if(cell.half==='L'){const right=board[r][c+1];if(right?.half==='R'&&r+1<ROWS&&!board[r+1][c]&&!board[r+1][c+1]){board[r+1][c]=cell;board[r+1][c+1]=right;board[r][c]=null;board[r][c+1]=null;moved=true;}}
+    else if(cell.half==='U'){const dn=board[r+1]?.[c];if(dn?.half==='D'&&r+2<ROWS&&!board[r+2][c]){board[r+2][c]=dn;board[r+1][c]=cell;board[r][c]=null;moved=true;}}
+  }
+  if(moved){phase='grav';setTimeout(()=>applyGravity(),80);}else{phase='play';startClear();}
+}
+
+// ── draw ──
+function drawHalf(cx,px,py,color,half){
+  const R=CS/2-2;cx.fillStyle=CFILL[color];cx.beginPath();
+  if(half==='L'){cx.arc(px+R+2,py+CS/2,R,Math.PI/2,Math.PI*3/2);cx.lineTo(px+CS,py+CS/2-R);cx.lineTo(px+CS,py+CS/2+R);}
+  else if(half==='R'){cx.arc(px+CS-R-2,py+CS/2,R,-Math.PI/2,Math.PI/2);cx.lineTo(px,py+CS/2+R);cx.lineTo(px,py+CS/2-R);}
+  else if(half==='U'){cx.arc(px+CS/2,py+R+2,R,Math.PI,0);cx.lineTo(px+CS/2+R,py+CS);cx.lineTo(px+CS/2-R,py+CS);}
+  else if(half==='D'){cx.arc(px+CS/2,py+CS-R-2,R,0,Math.PI);cx.lineTo(px+CS/2-R,py);cx.lineTo(px+CS/2+R,py);}
+  else cx.arc(px+CS/2,py+CS/2,R,0,Math.PI*2);
+  cx.closePath();cx.fill();
+  cx.fillStyle='rgba(255,255,255,0.2)';cx.beginPath();cx.ellipse(px+CS/2-2,py+CS/2-3,R*0.45,R*0.28,-0.4,0,Math.PI*2);cx.fill();
+}
+
+function drawVirus(cx,px,py,color){
+  const r=CS/2-3;cx.fillStyle=CFILL[color];cx.beginPath();cx.arc(px+CS/2,py+CS/2,r,0,Math.PI*2);cx.fill();
+  cx.strokeStyle=CFILL[color];cx.lineWidth=2;
+  for(let i=0;i<8;i++){const a=i/8*Math.PI*2;cx.beginPath();cx.moveTo(px+CS/2+Math.cos(a)*r,py+CS/2+Math.sin(a)*r);cx.lineTo(px+CS/2+Math.cos(a)*(r+3),py+CS/2+Math.sin(a)*(r+3));cx.stroke();}
+  cx.fillStyle='#fff';cx.beginPath();cx.arc(px+CS/2-3,py+CS/2-2,2.5,0,Math.PI*2);cx.fill();cx.beginPath();cx.arc(px+CS/2+3,py+CS/2-2,2.5,0,Math.PI*2);cx.fill();
+  cx.fillStyle='#000';cx.beginPath();cx.arc(px+CS/2-3,py+CS/2-2,1,0,Math.PI*2);cx.fill();cx.beginPath();cx.arc(px+CS/2+3,py+CS/2-2,1,0,Math.PI*2);cx.fill();
+  cx.strokeStyle='#fff';cx.lineWidth=1.5;cx.beginPath();cx.arc(px+CS/2,py+CS/2+2,3,0.2,Math.PI-0.2);cx.stroke();
+}
+
+function render(sf){
+  ctx.clearRect(0,0,gc.width,gc.height);
+  ctx.strokeStyle='rgba(255,255,255,0.04)';ctx.lineWidth=1;
+  for(let r=0;r<=ROWS;r++){ctx.beginPath();ctx.moveTo(0,r*CS);ctx.lineTo(COLS*CS,r*CS);ctx.stroke();}
+  for(let c=0;c<=COLS;c++){ctx.beginPath();ctx.moveTo(c*CS,0);ctx.lineTo(c*CS,ROWS*CS);ctx.stroke();}
+  for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++){
+    const cell=board[r][c];if(!cell)continue;
+    if(flashData?.[r]?.[c]&&!sf)continue;
+    if(cell.kind==='virus')drawVirus(ctx,c*CS,r*CS,cell.color);else drawHalf(ctx,c*CS,r*CS,cell.color,cell.half);
+  }
+  if(pill&&phase==='play'){
+    let gs=pill.segs.map(s=>({...s}));
+    while(true){const ns=gs.map(s=>({...s,r:s.r+1}));if(ns.every(s=>isFree(s.r,s.c)))gs=ns;else break;}
+    ctx.globalAlpha=0.18;gs.forEach(s=>drawHalf(ctx,s.c*CS,s.r*CS,s.color,s.half));
+    ctx.globalAlpha=1;pill.segs.forEach(s=>drawHalf(ctx,s.c*CS,s.r*CS,s.color,s.half));
+  }
+}
+
+function drawNext(){
+  nctx.clearRect(0,0,nc.width,nc.height);
+  if(!nextColors)return;
+  const r=nc.height*0.38;
+  [0,1].forEach(i=>{
+    nctx.fillStyle=CFILL[nextColors[i]];
+    nctx.beginPath();nctx.arc(nc.width/2+(i===0?-r:r)*0.9,nc.height/2,r,0,Math.PI*2);nctx.fill();
+    nctx.fillStyle='rgba(255,255,255,0.22)';nctx.beginPath();nctx.arc(nc.width/2+(i===0?-r:r)*0.9-r*0.15,nc.height/2-r*0.2,r*0.3,0,Math.PI*2);nctx.fill();
+  });
+}
+
+// ── loop ──
+function tick(ts){
+  raf=requestAnimationFrame(tick);const dt=ts-lastTs;lastTs=ts;
+  if(phase==='flash'){flashAcc+=dt;if(flashAcc>=80){flashAcc=0;flashTick++;}if(flashTick>=8)removeCells();else render(flashTick%2===0);return;}
+  if(phase!=='play'){render(true);return;}
+  dropAcc+=dt;const spd=SPEED[Math.min(level-1,SPEED.length-1)];
+  if(dropAcc>=spd){dropAcc=0;if(pill){if(!shift(1,0))lock();}}
+  render(true);
+}
+
+// ── ui ──
+function updateUI(){
+  document.getElementById('elScore').textContent=score.toLocaleString();
+  document.getElementById('elLevel').textContent=level;
+  document.getElementById('elVirus').textContent=virusLeft;
+}
+function showOv(title,sub,btn,fn){
+  const ov=document.getElementById('overlay');
+  ov.innerHTML=`<h2>${title}</h2><p>${sub}</p><button class="ovBtn" id="ovBtn">${btn}</button>`;
+  ov.style.display='flex';document.getElementById('ovBtn').onclick=fn;
+}
+
+// ── button controls ──
+const heldBtn={L:false,R:false,D:false};
+let dasL=0,dasR=0;
+
+function setupBtn(id,onDown,onUp){
+  const el=document.getElementById(id);
+  function down(e){e.preventDefault();el.classList.add('pressed');onDown&&onDown();}
+  function up(e){e.preventDefault();el.classList.remove('pressed');onUp&&onUp();}
+  el.addEventListener('touchstart',down,{passive:false});
+  el.addEventListener('touchend',up,{passive:false});
+  el.addEventListener('touchcancel',up,{passive:false});
+  el.addEventListener('mousedown',down);
+  el.addEventListener('mouseup',up);
+  el.addEventListener('mouseleave',up);
+}
+
+setupBtn('btnL',
+  ()=>{if(phase==='play'&&pill)shift(0,-1);heldBtn.L=true;dasL=0;},
+  ()=>{heldBtn.L=false;dasL=0;}
+);
+setupBtn('btnR',
+  ()=>{if(phase==='play'&&pill)shift(0,1);heldBtn.R=true;dasR=0;},
+  ()=>{heldBtn.R=false;dasR=0;}
+);
+setupBtn('btnRot',
+  ()=>{if(phase==='play'&&pill)rotate();},null
+);
+setupBtn('btnDrop',
+  ()=>{heldBtn.D=true;},
+  ()=>{heldBtn.D=false;}
+);
+
+setInterval(()=>{
+  if(phase!=='play'||!pill)return;
+  if(heldBtn.L){dasL+=16;if(dasL>180)shift(0,-1);}else dasL=0;
+  if(heldBtn.R){dasR+=16;if(dasR>180)shift(0,1);}else dasR=0;
+  if(heldBtn.D){if(!shift(1,0))lock();dropAcc=0;}
+},50);
+
+// Pause button
+document.getElementById('pauseBtn').addEventListener('click',()=>{
+  if(phase==='play'){phase='pause';showOv('PAUSE','','RESUME',()=>{document.getElementById('overlay').style.display='none';phase='play';lastTs=performance.now();});}
+});
+
+// ── keyboard (fallback) ──
+const held={};let kDas=0;
+document.addEventListener('keydown',e=>{
+  if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key))e.preventDefault();
+  if(held[e.key])return;held[e.key]=true;
+  if(phase!=='play'||!pill)return;
+  if(e.key==='ArrowLeft')shift(0,-1);
+  if(e.key==='ArrowRight')shift(0,1);
+  if(e.key==='ArrowUp'||e.key==='z'||e.key==='Z')rotate();
+});
+document.addEventListener('keyup',e=>{held[e.key]=false;});
+setInterval(()=>{
+  if(phase!=='play'||!pill)return;
+  if(held['ArrowLeft']){kDas+=16;if(kDas>180)shift(0,-1);}else if(held['ArrowRight']){kDas+=16;if(kDas>180)shift(0,1);}else kDas=0;
+  if(held['ArrowDown']){if(!shift(1,0))lock();dropAcc=0;}
+},50);
+
+// ── start ──
+document.getElementById('btnStart').onclick=()=>init(1);
+render(true);
+</script>
+</body>
+</html>

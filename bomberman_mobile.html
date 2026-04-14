@@ -1,0 +1,774 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>💣 BOMBERMAN</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+  html,body{width:100%;height:100%;overflow:hidden;background:#1a0a2e;font-family:'Press Start 2P',monospace;touch-action:none;}
+  body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellipse at 50% 0%,#3d1060 0%,#1a0a2e 60%);z-index:-1;}
+  #wrap{display:flex;flex-direction:column;align-items:center;height:100%;padding:6px 0 0;}
+  h1{color:#f0c040;font-size:16px;letter-spacing:2px;text-shadow:2px 2px 0 #a06000;margin-bottom:4px;}
+  #hud{display:flex;gap:16px;margin-bottom:4px;color:#fff;font-size:9px;align-items:center;}
+  .hv{color:#f0c040;}
+  #canvas-wrap{position:relative;width:100%;}
+  canvas{display:block;border:3px solid #f0c040;border-radius:3px;box-shadow:0 0 20px rgba(240,192,64,0.3);width:100%;height:auto;image-rendering:pixelated;}
+  #overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(10,4,30,0.88);border-radius:2px;z-index:10;gap:12px;}
+  #overlay h2{color:#f0c040;font-size:16px;text-shadow:2px 2px 0 #805000;text-align:center;}
+  #overlay p{color:#ccc;font-size:7px;line-height:2.2;text-align:center;}
+  .btn{background:#f0c040;color:#1a0a2e;border:none;padding:10px 24px;font-family:'Press Start 2P',monospace;font-size:11px;cursor:pointer;border-radius:2px;box-shadow:3px 3px 0 #805000;}
+  /* コントローラー */
+  #controller{display:flex;align-items:center;justify-content:space-between;width:100%;padding:8px 12px;margin-top:6px;}
+  #dpad{position:relative;width:130px;height:130px;flex-shrink:0;}
+  .dpad-btn{position:absolute;background:rgba(255,255,255,0.12);border:1.5px solid rgba(255,255,255,0.25);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:18px;color:rgba(255,255,255,0.8);cursor:pointer;user-select:none;transition:background 0.05s;}
+  .dpad-btn:active,.dpad-btn.pressed{background:rgba(255,255,255,0.3);}
+  #btn-up   {width:42px;height:42px;top:0;left:44px;}
+  #btn-down {width:42px;height:42px;bottom:0;left:44px;}
+  #btn-left {width:42px;height:42px;top:44px;left:0;}
+  #btn-right{width:42px;height:42px;top:44px;right:0;}
+  #dpad-center{position:absolute;width:42px;height:42px;top:44px;left:44px;background:rgba(80,60,20,0.3);border-radius:50%;}
+  #bomb-btn{width:80px;height:80px;border-radius:50%;background:radial-gradient(circle at 35% 35%,#555,#111);border:3px solid #f0c040;box-shadow:0 0 16px rgba(240,192,64,0.4),4px 4px 0 #805000;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;font-size:26px;color:#f0c040;user-select:none;flex-shrink:0;}
+  #bomb-btn:active{transform:scale(0.92);box-shadow:0 0 8px rgba(240,192,64,0.3),2px 2px 0 #805000;}
+  #bomb-label{font-size:6px;color:#f0c040;margin-top:2px;}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <h1>💣 BOMBERMAN</h1>
+  <div id="hud">
+    <span>❤️ <span class="hv" id="lives">3</span></span>
+    <span>💣 <span class="hv" id="bombs">1</span></span>
+    <span>🔥 <span class="hv" id="power">1</span></span>
+    <span>⭐ <span class="hv" id="score">0</span></span>
+  </div>
+  <div id="canvas-wrap">
+    <canvas id="canvas"></canvas>
+    <div id="overlay">
+      <h2>💣 BOMBERMAN</h2>
+      <p>十字キーで移動<br>💣ボタンで爆弾設置<br><br>敵を全員倒せ！</p>
+      <button class="btn" id="startBtn">START</button>
+    </div>
+  </div>
+  <div id="controller">
+    <div id="dpad">
+      <div class="dpad-btn" id="btn-up">▲</div>
+      <div class="dpad-btn" id="btn-left">◀</div>
+      <div id="dpad-center"></div>
+      <div class="dpad-btn" id="btn-right">▶</div>
+      <div class="dpad-btn" id="btn-down">▼</div>
+    </div>
+    <div id="bomb-btn">
+      💣
+      <div id="bomb-label">BOMB</div>
+    </div>
+  </div>
+</div>
+
+<script>
+
+const TILE = 40;
+const COLS = 15;
+const ROWS = 13;
+const W = COLS * TILE;
+const H = ROWS * TILE;
+
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+canvas.width = W;
+canvas.height = H;
+
+const overlay = document.getElementById('overlay');
+const livesEl = document.getElementById('lives');
+const bombsEl = document.getElementById('bombs');
+const powerEl = document.getElementById('power');
+const scoreEl = document.getElementById('score');
+
+const keys = {};
+let game = null;
+let animId = null;
+
+document.addEventListener('keydown', e => {
+  keys[e.key] = true;
+  if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
+  if(e.key === ' ' && game && game.running) placeBomb();
+});
+document.addEventListener('keyup', e => { keys[e.key] = false; });
+
+function initGame() {
+  game = {
+    running: true,
+    score: 0,
+    player: {
+      px: TILE, py: TILE,
+      x: 1, y: 1,
+      speed: 2.8,
+      maxBombs: 1, fireRange: 1,
+      activeBombs: 0,
+      invincible: 0,
+      lives: 3,
+      dead: false,
+      walkFrame: 0, walkDir: 0, moving: false,
+    },
+    bombs: [],
+    explosions: [],
+    enemies: [],
+    powerups: [],
+    grid: [],
+    frame: 0,
+    lastTime: 0,
+  };
+  buildMap();
+  spawnEnemies();
+  updateHUD();
+}
+
+function buildMap() {
+  const g = [];
+  for(let r = 0; r < ROWS; r++) {
+    g[r] = [];
+    for(let c = 0; c < COLS; c++) {
+      if(r === 0 || r === ROWS-1 || c === 0 || c === COLS-1) g[r][c] = 1;
+      else if(r % 2 === 0 && c % 2 === 0) g[r][c] = 1;
+      else g[r][c] = 0;
+    }
+  }
+  const safe = [[1,1],[1,2],[2,1],[1,3],[3,1]];
+  for(let r=1; r<ROWS-1; r++) {
+    for(let c=1; c<COLS-1; c++) {
+      if(g[r][c] === 0 && !safe.some(([sr,sc])=>sr===r&&sc===c) && Math.random()<0.62)
+        g[r][c] = 2;
+    }
+  }
+  game.grid = g;
+}
+
+function spawnEnemies() {
+  // 固定スポーン（プレイヤー開始地点(1,1)から離れた角・中間）
+  const spawns = [[ROWS-2,COLS-2],[ROWS-2,COLS-4],[ROWS-4,COLS-2],[2,COLS-2],[ROWS-4,COLS-4]];
+  spawns.forEach(([r,c], i) => {
+    // スポーン周囲2マスの壊せるブロックを除去してスペース確保
+    for(let dr=-2;dr<=2;dr++){
+      for(let dc2=-2;dc2<=2;dc2++){
+        const nr=r+dr,nc=c+dc2;
+        if(nr>0&&nr<ROWS-1&&nc>0&&nc<COLS-1&&game.grid[nr][nc]===2)
+          game.grid[nr][nc]=0;
+      }
+    }
+    // グリッドが壁なら隣の空きマスを探す
+    let sr=r,sc=c;
+    if(game.grid[sr][sc]!==0){
+      outer:for(let dr=-1;dr<=1;dr++)for(let dc2=-1;dc2<=1;dc2++){
+        if(game.grid[r+dr]?.[c+dc2]===0){sr=r+dr;sc=c+dc2;break outer;}
+      }
+    }
+    game.enemies.push({
+      px: sc*TILE, py: sr*TILE, x:sc, y:sr,
+      dir: Math.floor(Math.random()*4),
+      moveTimer: 0, thinkTimer: 0, fleeTimer: 0,
+      dead: false, frame: 0, type: i%2, colorIdx: i,
+      activeBombs: 0, maxBombs: 1, fireRange: 1,
+      speed: 0.9 + i*0.15,
+    });
+  });
+}
+
+function isWalkable(c, r) {
+  return c>=0&&c<COLS&&r>=0&&r<ROWS&&game.grid[r][c]===0;
+}
+
+function hasBombAt(c, r, exclude) {
+  return game.bombs.some(b => b.c===c && b.r===r && b!==exclude);
+}
+
+function placeBomb() {
+  const p = game.player;
+  if(p.dead || p.activeBombs >= p.maxBombs) return;
+  const bc = Math.round(p.px/TILE), br = Math.round(p.py/TILE);
+  if(game.bombs.some(b=>b.c===bc&&b.r===br)) return;
+  game.bombs.push({c:bc,r:br,timer:150,range:p.fireRange,owner:'player'});
+  p.activeBombs++;
+}
+
+function getBlastCells(bomb) {
+  const cells=[{c:bomb.c,r:bomb.r}];
+  for(const [dc,dr] of [[1,0],[-1,0],[0,1],[0,-1]]){
+    for(let i=1;i<=bomb.range;i++){
+      const nc=bomb.c+dc*i,nr=bomb.r+dr*i;
+      if(nr<0||nr>=ROWS||nc<0||nc>=COLS) break;
+      if(game.grid[nr][nc]===1) break;
+      cells.push({c:nc,r:nr});
+      if(game.grid[nr][nc]===2) break;
+    }
+  }
+  return cells;
+}
+
+// そのマスが爆風に巻き込まれるか（タイマー残り enough か考慮）
+function isDangerCell(c,r){
+  for(const b of game.bombs){if(getBlastCells(b).some(cl=>cl.c===c&&cl.r===r)) return true;}
+  for(const ex of game.explosions){if(ex.cells.some(cl=>cl.c===c&&cl.r===r)) return true;}
+  return false;
+}
+
+// BFSで安全マスへの最初の方向を返す。extraBomb=置こうとしている爆弾(nullなら無し)
+function findEscapeDir(startC, startR, extraBomb){
+  // 危険マスセットを作る
+  const danger=new Set();
+  const bombs=[...game.bombs];
+  if(extraBomb) bombs.push(extraBomb);
+  for(const b of bombs)
+    for(const cl of getBlastCells(b)) danger.add(cl.c+','+cl.r);
+  for(const ex of game.explosions)
+    for(const cl of ex.cells) danger.add(cl.c+','+cl.r);
+
+  // BFS (爆弾マスは通過不可、ただしextraBombのマスは出発点なので通過OK)
+  const BDIRS=[[1,0],[-1,0],[0,1],[0,-1]];
+  const visited=new Set([startC+','+startR]);
+  const queue=[{c:startC,r:startR,dir:-1}];
+  while(queue.length){
+    const {c,r,dir}=queue.shift();
+    if(!danger.has(c+','+r)&&!(c===startC&&r===startR)) return dir;
+    for(let i=0;i<4;i++){
+      const nc=c+BDIRS[i][0], nr=r+BDIRS[i][1];
+      const key=nc+','+nr;
+      if(visited.has(key)||!isWalkable(nc,nr)) continue;
+      // 爆弾があるマスは通れない（出発マスは除く）
+      const blocked=bombs.some(b=>b.c===nc&&b.r===nr)&&!(nc===startC&&nr===startR);
+      if(blocked) continue;
+      visited.add(key);
+      queue.push({c:nc,r:nr,dir:dir===-1?i:dir});
+    }
+  }
+  return -1;
+}
+
+function blastTargets(c,r,range,self){
+  const cells=getBlastCells({c,r,range});
+  let n=0;
+  const p=game.player;
+  if(!p.dead&&cells.some(cl=>cl.c===Math.round(p.px/TILE)&&cl.r===Math.round(p.py/TILE))) n+=10;
+  game.enemies.forEach(e=>{
+    if(!e.dead&&e!==self&&cells.some(cl=>cl.c===Math.round(e.px/TILE)&&cl.r===Math.round(e.py/TILE))) n++;
+  });
+  return n;
+}
+function explodeBomb(bomb) {
+  const cells=getBlastCells(bomb);
+  const dirs=[[1,0],[-1,0],[0,1],[0,-1]];
+  for(const [dc,dr] of dirs){
+    for(let i=1;i<=bomb.range;i++){
+      const nc=bomb.c+dc*i,nr=bomb.r+dr*i;
+      if(nr<0||nr>=ROWS||nc<0||nc>=COLS) break;
+      if(game.grid[nr][nc]===1) break;
+      if(game.grid[nr][nc]===2){
+        game.grid[nr][nc]=0; game.score+=10;
+        if(Math.random()<0.35){
+          const t=['bomb','fire','speed'][Math.floor(Math.random()*3)];
+          game.powerups.push({c:nc,r:nr,type:t,frame:0});
+        }
+        break;
+      }
+    }
+  }
+  game.explosions.push({cells,timer:12});
+  if(bomb.owner==='player') game.player.activeBombs=Math.max(0,game.player.activeBombs-1);
+  else if(bomb.ownerRef) bomb.ownerRef.activeBombs=Math.max(0,(bomb.ownerRef.activeBombs||0)-1);
+  game.bombs.forEach(b=>{if(b!==bomb&&cells.some(cl=>cl.c===b.c&&cl.r===b.r)) b.timer=1;});
+}
+
+function hitPlayer() {
+  const p = game.player;
+  if(p.invincible>0||p.dead) return;
+  p.lives--; p.invincible=120;
+  updateHUD();
+  if(p.lives<=0) {
+    p.dead=true;
+    setTimeout(()=>endGame(false), 1000);
+  }
+}
+
+function checkHits() {
+  const p = game.player;
+  const pc=Math.round(p.px/TILE), pr=Math.round(p.py/TILE);
+  for(const exp of game.explosions) {
+    if(!p.dead && exp.cells.some(cell=>cell.c===pc&&cell.r===pr)) hitPlayer();
+    game.enemies.forEach(e => {
+      if(!e.dead) {
+        const ec=Math.round(e.px/TILE), er=Math.round(e.py/TILE);
+        if(exp.cells.some(cell=>cell.c===ec&&cell.r===er)) {
+          e.dead=true; game.score+=100; updateHUD();
+        }
+      }
+    });
+  }
+}
+
+function moveEnt(e, dx, dy, skipBombCheck) {
+  const m=7;
+  const curC=Math.round(e.px/TILE), curR=Math.round(e.py/TILE);
+  // 今立っているマスの爆弾は通り抜け可能（置いた直後に動けなくなるのを防ぐ）
+  const isBombPassable=(c,r)=>skipBombCheck||!hasBombAt(c,r)||(c===curC&&r===curR);
+  if(dx!==0) {
+    const nx=e.px+dx;
+    const r1=Math.floor((e.py+m)/TILE), r2=Math.floor((e.py+TILE-m)/TILE);
+    const col=dx>0?Math.floor((nx+TILE-m)/TILE):Math.floor((nx+m)/TILE);
+    if(isWalkable(col,r1)&&isWalkable(col,r2)&&isBombPassable(col,r1)&&isBombPassable(col,r2)) e.px=nx;
+  }
+  if(dy!==0) {
+    const ny=e.py+dy;
+    const c1=Math.floor((e.px+m)/TILE), c2=Math.floor((e.px+TILE-m)/TILE);
+    const row=dy>0?Math.floor((ny+TILE-m)/TILE):Math.floor((ny+m)/TILE);
+    if(isWalkable(c1,row)&&isWalkable(c2,row)&&isBombPassable(c1,row)&&isBombPassable(c2,row)) e.py=ny;
+  }
+  e.x=Math.round(e.px/TILE); e.y=Math.round(e.py/TILE);
+}
+
+function update() {
+  if(!game||!game.running) return;
+  game.frame++;
+  const p = game.player;
+
+  // player move
+  if(!p.dead) {
+    let dx=0,dy=0;
+    if(keys['ArrowLeft']||keys['a']||keys['A']) dx=-p.speed;
+    else if(keys['ArrowRight']||keys['d']||keys['D']) dx=p.speed;
+    if(keys['ArrowUp']||keys['w']||keys['W']) dy=-p.speed;
+    else if(keys['ArrowDown']||keys['s']||keys['S']) dy=p.speed;
+    p.moving = dx!==0||dy!==0;
+    if(p.moving) { p.walkFrame++; if(dx<0)p.walkDir=2; else if(dx>0)p.walkDir=0; else if(dy<0)p.walkDir=3; else p.walkDir=1; }
+    moveEnt(p,dx,dy,false);
+  }
+
+  // enemy AI (ステートマシン: 逃走 > 通常)
+  const DIRS=[[1,0],[-1,0],[0,1],[0,-1]];
+  game.enemies.forEach(e => {
+    if(e.dead) return;
+    e.frame++;
+    if(e.fleeTimer===undefined){e.fleeTimer=0;e.thinkTimer=0;}
+
+    const ec=Math.round(e.px/TILE), er=Math.round(e.py/TILE);
+
+    // ① 危険判定（毎フレーム更新）
+    const inDanger=isDangerCell(ec,er);
+
+    // ② 移動方向を決める
+    if(inDanger || e.fleeTimer>0){
+      // 危険 or 爆弾直後の逃走：毎フレームBFSで安全方向を計算
+      if(e.fleeTimer>0) e.fleeTimer--;
+      const escDir=findEscapeDir(ec,er,null);
+      if(escDir!==-1) e.dir=escDir;
+      // escDir==-1なら今の向きを維持してとにかく動く
+
+    } else {
+      // 通常行動：thinkTimerごとに方向決定
+      e.thinkTimer--;
+      if(e.thinkTimer<=0){
+        e.thinkTimer=Math.floor(20+Math.random()*20);
+        let bestPu=null,bestDist=7;
+        for(const pu of game.powerups){
+          const d=Math.abs(pu.c-ec)+Math.abs(pu.r-er);
+          if(d<bestDist){bestDist=d;bestPu=pu;}
+        }
+        if(bestPu){
+          const ddc=bestPu.c-ec,ddr=bestPu.r-er;
+          e.dir=Math.abs(ddc)>Math.abs(ddr)?(ddc>0?0:1):(ddr>0?2:3);
+        } else if(!p.dead&&Math.random()<0.6){
+          const ddc=p.px-e.px,ddr=p.py-e.py;
+          e.dir=Math.abs(ddc)>Math.abs(ddr)?(ddc>0?0:1):(ddr>0?2:3);
+        } else {
+          e.dir=Math.floor(Math.random()*4);
+        }
+      }
+
+      // ③ 爆弾設置（安全な状況でのみ）
+      const noOwnBomb=!game.bombs.some(b=>b.c===ec&&b.r===er);
+      if(e.activeBombs<e.maxBombs&&noOwnBomb){
+        const hits=blastTargets(ec,er,e.fireRange,e);
+        const boxes=getBlastCells({c:ec,r:er,range:e.fireRange})
+          .filter(cl=>game.grid[cl.r]?.[cl.c]===2).length;
+        // プレイヤーが射程+2マス以内かつ確率制御
+        const playerDist=Math.abs(Math.round(p.px/TILE)-ec)+Math.abs(Math.round(p.py/TILE)-er);
+        const wantBomb=(hits>=1&&playerDist<=e.fireRange+3)||(boxes>=2&&Math.random()<0.015);
+        if(wantBomb){
+          // 爆弾を置いた仮定でBFS → 逃げられるか確認
+          const fakeBomb={c:ec,r:er,range:e.fireRange,timer:999};
+          const escDir=findEscapeDir(ec,er,fakeBomb);
+          if(escDir!==-1){
+            game.bombs.push({c:ec,r:er,timer:120,range:e.fireRange,owner:'enemy',ownerRef:e});
+            e.activeBombs++;
+            e.dir=escDir;
+            e.fleeTimer=130;
+            e.thinkTimer=999;
+          }
+        }
+      }
+    }
+
+    // ④ 移動実行
+    const [dc,dr]=DIRS[e.dir];
+    const prevPx=e.px,prevPy=e.py;
+    const curC=Math.round(e.px/TILE),curR=Math.round(e.py/TILE);
+    const bOk=(c,r)=>!game.bombs.some(b=>b.c===c&&b.r===r)||(c===curC&&r===curR);
+    const m=7;
+    if(dc!==0){
+      const nx=e.px+dc*e.speed;
+      const r1=Math.floor((e.py+m)/TILE),r2=Math.floor((e.py+TILE-m)/TILE);
+      const col=dc>0?Math.floor((nx+TILE-m)/TILE):Math.floor((nx+m)/TILE);
+      if(isWalkable(col,r1)&&isWalkable(col,r2)&&bOk(col,r1)&&bOk(col,r2)) e.px=nx;
+    }
+    if(dr!==0){
+      const ny=e.py+dr*e.speed;
+      const c1=Math.floor((e.px+m)/TILE),c2=Math.floor((e.px+TILE-m)/TILE);
+      const row=dr>0?Math.floor((ny+TILE-m)/TILE):Math.floor((ny+m)/TILE);
+      if(isWalkable(c1,row)&&isWalkable(c2,row)&&bOk(c1,row)&&bOk(c2,row)) e.py=ny;
+    }
+    e.x=Math.round(e.px/TILE);e.y=Math.round(e.py/TILE);
+    if(e.px===prevPx&&e.py===prevPy) e.dir=Math.floor(Math.random()*4);
+
+    // ⑤ パワーアップ取得
+    game.powerups=game.powerups.filter(pu=>{
+      if(pu.c===e.x&&pu.r===e.y){
+        if(pu.type==='bomb') e.maxBombs=Math.min(3,e.maxBombs+1);
+        if(pu.type==='fire') e.fireRange=Math.min(4,e.fireRange+1);
+        if(pu.type==='speed') e.speed=Math.min(3.0,e.speed+0.3);
+        return false;
+      }
+      return true;
+    });
+
+    // ⑥ 体当たり
+    if(!p.dead&&Math.hypot(e.px-p.px,e.py-p.py)<TILE*0.65) hitPlayer();
+  });
+
+
+  // bombs
+  game.bombs=game.bombs.filter(b=>{
+    b.timer--;
+    if(b.timer<=0){explodeBomb(b);return false;}
+    return true;
+  });
+
+  // explosions
+  checkHits();
+  game.explosions=game.explosions.filter(e=>{e.timer--;return e.timer>0;});
+
+  // powerups
+  if(!p.dead) {
+    const pc=Math.round(p.px/TILE),pr=Math.round(p.py/TILE);
+    game.powerups=game.powerups.filter(pu=>{
+      pu.frame++;
+      if(pu.c===pc&&pu.r===pr){
+        if(pu.type==='bomb') p.maxBombs=Math.min(8,p.maxBombs+1);
+        if(pu.type==='fire') p.fireRange=Math.min(8,p.fireRange+1);
+        if(pu.type==='speed') p.speed=Math.min(5.5,p.speed+0.5);
+        game.score+=50; updateHUD(); return false;
+      }
+      return true;
+    });
+  }
+
+  if(p.invincible>0) p.invincible--;
+  if(!p.dead&&game.enemies.every(e=>e.dead)) { setTimeout(()=>endGame(true),500); game.running=false; }
+}
+
+// --- Drawing ---
+function drawFloor(c,r) {
+  const x=c*TILE,y=r*TILE;
+  ctx.fillStyle=(c+r)%2===0?'#2a1f0e':'#261c0d';
+  ctx.fillRect(x,y,TILE,TILE);
+}
+
+function drawWall(c,r) {
+  const x=c*TILE,y=r*TILE;
+  const grad=ctx.createLinearGradient(x,y,x+TILE,y+TILE);
+  grad.addColorStop(0,'#666');grad.addColorStop(1,'#333');
+  ctx.fillStyle=grad;
+  ctx.fillRect(x,y,TILE,TILE);
+  ctx.fillStyle='rgba(255,255,255,0.12)';
+  ctx.fillRect(x+2,y+2,TILE-4,8);
+  ctx.fillRect(x+2,y+2,8,TILE-4);
+  ctx.fillStyle='rgba(0,0,0,0.3)';
+  ctx.fillRect(x+TILE-5,y,5,TILE);
+  ctx.fillRect(x,y+TILE-5,TILE,5);
+}
+
+function drawBox(c,r) {
+  const x=c*TILE,y=r*TILE;
+  ctx.fillStyle='#8B5E3C';
+  ctx.fillRect(x+1,y+1,TILE-2,TILE-2);
+  ctx.fillStyle='#a07040';
+  ctx.fillRect(x+3,y+3,TILE-6,TILE-6);
+  ctx.fillStyle='#6B3E1C';
+  ctx.strokeStyle='#6B3E1C';
+  ctx.lineWidth=2;
+  ctx.strokeRect(x+4,y+4,TILE-8,TILE-8);
+  ctx.fillStyle='rgba(255,255,255,0.2)';
+  ctx.fillRect(x+5,y+5,TILE-12,7);
+  ctx.fillRect(x+5,y+5,7,TILE-12);
+}
+
+function drawPowerup(pu) {
+  const x=pu.c*TILE,y=pu.r*TILE;
+  const bob=Math.sin(pu.frame*0.12)*4;
+  const col=pu.type==='bomb'?'#4488ff':pu.type==='fire'?'#ff4444':'#44dd88';
+  ctx.shadowColor=col; ctx.shadowBlur=12;
+  ctx.fillStyle=col;
+  roundRect(ctx,x+5,y+5+bob,TILE-10,TILE-10,6);
+  ctx.fill();
+  ctx.shadowBlur=0;
+  ctx.fillStyle='rgba(255,255,255,0.4)';
+  roundRect(ctx,x+7,y+7+bob,TILE-14,10,4);
+  ctx.fill();
+  ctx.fillStyle='#fff';
+  ctx.font='bold 18px sans-serif';
+  ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.fillText(pu.type==='bomb'?'B':pu.type==='fire'?'F':'S',x+TILE/2,y+TILE/2+bob);
+}
+
+function roundRect(ctx,x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.quadraticCurveTo(x+w,y,x+w,y+r);
+  ctx.lineTo(x+w,y+h-r);ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+  ctx.lineTo(x+r,y+h);ctx.quadraticCurveTo(x,y+h,x,y+h-r);
+  ctx.lineTo(x,y+r);ctx.quadraticCurveTo(x,y,x+r,y);
+  ctx.closePath();
+}
+
+function drawBomb(b) {
+  const x=b.c*TILE+TILE/2, y=b.r*TILE+TILE/2;
+  const pulse=1+0.12*Math.sin(b.timer*0.18);
+  const r=(TILE/2-7)*pulse;
+  // shadow
+  ctx.fillStyle='rgba(0,0,0,0.3)';
+  ctx.beginPath();ctx.ellipse(x+2,y+r+4,r-2,5,0,0,Math.PI*2);ctx.fill();
+  // body
+  ctx.shadowColor='#f55';ctx.shadowBlur=b.timer<50?20:0;
+  ctx.fillStyle='#1a1a1a';
+  ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='#2d2d2d';
+  ctx.beginPath();ctx.arc(x-r*0.2,y-r*0.2,r*0.6,0,Math.PI*2);ctx.fill();
+  ctx.shadowBlur=0;
+  // shine
+  ctx.fillStyle='rgba(255,255,255,0.15)';
+  ctx.beginPath();ctx.ellipse(x-r*0.3,y-r*0.3,r*0.35,r*0.2,-0.5,0,Math.PI*2);ctx.fill();
+  // fuse
+  ctx.strokeStyle='#c8a850'; ctx.lineWidth=2.5;
+  ctx.beginPath();ctx.moveTo(x+3,y-r+2);ctx.bezierCurveTo(x+8,y-r-5,x+14,y-r-8,x+12,y-r-16);ctx.stroke();
+  // spark
+  if(b.timer<70||(game.frame%8<4)){
+    ctx.fillStyle='#ff0';ctx.shadowColor='#ff0';ctx.shadowBlur=10;
+    ctx.beginPath();ctx.arc(x+12,y-r-16,3.5,0,Math.PI*2);ctx.fill();
+    ctx.shadowBlur=0;
+  }
+}
+
+function drawExplosion(exp) {
+  const a=exp.timer/45;
+  exp.cells.forEach(cell => {
+    const x=cell.c*TILE, y=cell.r*TILE;
+    ctx.shadowColor='#ff6600';ctx.shadowBlur=15*a;
+    ctx.fillStyle=`rgba(255,80,0,${a*0.9})`;
+    ctx.fillRect(x+1,y+1,TILE-2,TILE-2);
+    ctx.fillStyle=`rgba(255,200,0,${a*0.8})`;
+    ctx.fillRect(x+7,y+7,TILE-14,TILE-14);
+    ctx.fillStyle=`rgba(255,255,200,${a*0.6})`;
+    ctx.fillRect(x+13,y+13,TILE-26,TILE-26);
+    ctx.shadowBlur=0;
+  });
+}
+
+function drawPlayer() {
+  const p=game.player;
+  if(p.dead) return;
+  if(p.invincible>0&&(game.frame%8)<4) return;
+  const x=p.px, y=p.py;
+  const cx=x+TILE/2, cy=y+TILE/2;
+  const bounce=p.moving?Math.sin(p.walkFrame*0.4)*2:0;
+  // shadow
+  ctx.fillStyle='rgba(0,0,0,0.25)';
+  ctx.beginPath();ctx.ellipse(cx+2,y+TILE-3,12,4,0,0,Math.PI*2);ctx.fill();
+  // body
+  ctx.fillStyle='#e06820';
+  roundRect(ctx,x+8,y+20+bounce,TILE-16,TILE-22,5);
+  ctx.fill();
+  // legs
+  ctx.fillStyle='#333';
+  const legOff=p.moving?Math.sin(p.walkFrame*0.4)*4:0;
+  ctx.fillRect(x+10,y+TILE-10-legOff,10,10+legOff);
+  ctx.fillRect(x+TILE-20,y+TILE-10+legOff,10,10-legOff);
+  // head
+  ctx.shadowColor='rgba(240,192,64,0.4)';ctx.shadowBlur=10;
+  ctx.fillStyle='#f0c040';
+  ctx.beginPath();ctx.arc(cx,cy-8+bounce,15,0,Math.PI*2);ctx.fill();
+  ctx.shadowBlur=0;
+  // helmet
+  ctx.fillStyle='#e06820';
+  ctx.beginPath();ctx.arc(cx,cy-8+bounce,15,Math.PI,Math.PI*2);ctx.fill();
+  ctx.fillRect(x+5,cy-10+bounce,TILE-10,4);
+  // face
+  ctx.fillStyle='#f5d070';
+  ctx.beginPath();ctx.arc(cx,cy-4+bounce,10,0,Math.PI);ctx.fill();
+  // eyes
+  ctx.fillStyle='#1a1a1a';
+  ctx.beginPath();ctx.arc(cx-5,cy-10+bounce,3,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(cx+5,cy-10+bounce,3,0,Math.PI*2);ctx.fill();
+  // eye shine
+  ctx.fillStyle='#fff';
+  ctx.beginPath();ctx.arc(cx-4,cy-11+bounce,1.2,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(cx+6,cy-11+bounce,1.2,0,Math.PI*2);ctx.fill();
+  // smile
+  ctx.strokeStyle='#a06010';ctx.lineWidth=1.5;
+  ctx.beginPath();ctx.arc(cx,cy-3+bounce,5,0.2,Math.PI-0.2);ctx.stroke();
+}
+
+const ENEMY_COLORS = [
+  { helmet:'#990000', skin:'#f5c090', suit:'#cc2020' },
+  { helmet:'#003399', skin:'#f5c090', suit:'#2060cc' },
+  { helmet:'#006600', skin:'#f5c090', suit:'#20aa20' },
+  { helmet:'#660066', skin:'#f5c090', suit:'#aa20aa' },
+  { helmet:'#885500', skin:'#f5c090', suit:'#cc8800' },
+];
+
+function drawEnemy(e) {
+  if(e.dead) return;
+  const x=e.px, y=e.py;
+  const cx=x+TILE/2, cy=y+TILE/2;
+  const col=ENEMY_COLORS[e.colorIdx%ENEMY_COLORS.length];
+  const bounce=Math.sin(e.frame*0.35)*2;
+  const legOff=Math.sin(e.frame*0.35)*4;
+  // shadow
+  ctx.fillStyle='rgba(0,0,0,0.22)';
+  ctx.beginPath();ctx.ellipse(cx+2,y+TILE-3,12,4,0,0,Math.PI*2);ctx.fill();
+  // body
+  ctx.fillStyle=col.suit;
+  roundRect(ctx,x+8,y+20+bounce,TILE-16,TILE-22,5);ctx.fill();
+  ctx.fillStyle='rgba(255,255,255,0.18)';
+  roundRect(ctx,x+10,y+22+bounce,TILE-20,8,3);ctx.fill();
+  // legs
+  ctx.fillStyle='#222';
+  ctx.fillRect(x+10,y+TILE-10-legOff,10,10+legOff);
+  ctx.fillRect(x+TILE-20,y+TILE-10+legOff,10,10-legOff);
+  // boots
+  ctx.fillStyle=col.helmet;
+  ctx.fillRect(x+9,y+TILE-6-legOff,12,6+legOff);
+  ctx.fillRect(x+TILE-21,y+TILE-6+legOff,12,6-legOff);
+  // head
+  ctx.fillStyle=col.skin;
+  ctx.beginPath();ctx.arc(cx,cy-8+bounce,15,0,Math.PI*2);ctx.fill();
+  // helmet
+  ctx.fillStyle=col.helmet;
+  ctx.beginPath();ctx.arc(cx,cy-8+bounce,15,Math.PI,Math.PI*2);ctx.fill();
+  ctx.fillRect(x+4,cy-10+bounce,TILE-8,4);
+  // face
+  ctx.fillStyle=col.skin;
+  ctx.beginPath();ctx.arc(cx,cy-4+bounce,10,0,Math.PI);ctx.fill();
+  // eyes
+  ctx.fillStyle='#1a1a1a';
+  ctx.beginPath();ctx.arc(cx-5,cy-10+bounce,3,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(cx+5,cy-10+bounce,3,0,Math.PI*2);ctx.fill();
+  // angry brows
+  ctx.strokeStyle='#1a1a1a';ctx.lineWidth=2;
+  ctx.beginPath();ctx.moveTo(cx-9,cy-14+bounce);ctx.lineTo(cx-1,cy-12+bounce);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(cx+1,cy-12+bounce);ctx.lineTo(cx+9,cy-14+bounce);ctx.stroke();
+  // shine
+  ctx.fillStyle='rgba(255,255,255,0.6)';
+  ctx.beginPath();ctx.arc(cx-4,cy-11+bounce,1.2,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(cx+6,cy-11+bounce,1.2,0,Math.PI*2);ctx.fill();
+  // frown
+  ctx.strokeStyle='#a06030';ctx.lineWidth=1.5;
+  ctx.beginPath();ctx.arc(cx,cy-1+bounce,5,Math.PI+0.3,Math.PI*2-0.3);ctx.stroke();
+}
+
+function draw() {
+  ctx.clearRect(0,0,W,H);
+  // tiles
+  for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++) {
+    const v=game.grid[r][c];
+    if(v===1) drawWall(c,r);
+    else { drawFloor(c,r); if(v===2) drawBox(c,r); }
+  }
+  game.powerups.forEach(drawPowerup);
+  game.explosions.forEach(drawExplosion);
+  game.bombs.forEach(drawBomb);
+  game.enemies.forEach(drawEnemy);
+  drawPlayer();
+}
+
+function loop(ts) {
+  if(!game||!game.running) return;
+  update();
+  draw();
+  animId=requestAnimationFrame(loop);
+}
+
+function updateHUD() {
+  if(!game) return;
+  livesEl.textContent=game.player.lives;
+  bombsEl.textContent=game.player.maxBombs;
+  powerEl.textContent=game.player.fireRange;
+  scoreEl.textContent=game.score;
+}
+
+function endGame(win) {
+  if(animId) cancelAnimationFrame(animId);
+  overlay.innerHTML=`
+    <h2 style="font-size:${win?'20':'18'}px">${win?'🎉 STAGE CLEAR!':'💀 GAME OVER'}</h2>
+    <p>スコア: ${game.score}<br><br>${win?'全敵を倒した！':'また挑戦しよう！'}</p>
+    <button class="btn" onclick="startGame()">TRY AGAIN</button>
+  `;
+  overlay.style.display='flex';
+}
+
+window.startGame = function() {
+  overlay.style.display='none';
+  if(animId) cancelAnimationFrame(animId);
+  initGame();
+  animId=requestAnimationFrame(loop);
+};
+
+document.getElementById('startBtn').onclick=window.startGame;
+
+// タッチコントローラー
+const touchKeys = {};
+function setTouch(key, val) { keys[key] = val; }
+
+function addDpadBtn(id, key) {
+  const el = document.getElementById(id);
+  el.addEventListener('touchstart', e => { e.preventDefault(); keys[key]=true; el.classList.add('pressed'); }, {passive:false});
+  el.addEventListener('touchend',   e => { e.preventDefault(); keys[key]=false; el.classList.remove('pressed'); }, {passive:false});
+  el.addEventListener('touchcancel',e => { keys[key]=false; el.classList.remove('pressed'); });
+}
+addDpadBtn('btn-up',    'ArrowUp');
+addDpadBtn('btn-down',  'ArrowDown');
+addDpadBtn('btn-left',  'ArrowLeft');
+addDpadBtn('btn-right', 'ArrowRight');
+
+const bombBtn = document.getElementById('bomb-btn');
+bombBtn.addEventListener('touchstart', e => {
+  e.preventDefault();
+  if(game && game.running) placeBomb();
+}, {passive:false});
+
+// キャンバスをウィンドウに合わせてリサイズ
+function resizeCanvas() {
+  const wrap = document.getElementById('canvas-wrap');
+  const controller = document.getElementById('controller');
+  const hud = document.getElementById('hud');
+  const h1 = document.querySelector('h1');
+  const available = window.innerHeight - h1.offsetHeight - hud.offsetHeight - controller.offsetHeight - 28;
+  const maxW = window.innerWidth - 8;
+  const scale = Math.min(maxW / W, available / H);
+  canvas.style.width  = Math.floor(W * scale) + 'px';
+  canvas.style.height = Math.floor(H * scale) + 'px';
+}
+window.addEventListener('resize', resizeCanvas);
+window.addEventListener('load', resizeCanvas);
+setTimeout(resizeCanvas, 100);
+
+document.getElementById('startBtn').onclick = window.startGame;
+</script>
+</body>
+</html>
