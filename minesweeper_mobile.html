@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>マインスイーパー</title>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+html, body {
+  height: 100%; overflow: hidden;
+  background: #1a1a2e;
+  font-family: 'Press Start 2P', monospace;
+  user-select: none; touch-action: manipulation;
+}
+#app {
+  display: flex; flex-direction: column;
+  height: 100%; max-height: 100dvh;
+  align-items: center; padding: 10px 8px 6px;
+  gap: 8px;
+}
+h1 {
+  color: #e94560; font-size: 13px;
+  text-shadow: 2px 2px 0 #000; letter-spacing: 1px;
+  flex-shrink: 0;
+}
+#diff-row { display: flex; gap: 5px; flex-shrink: 0; }
+.diff-btn {
+  font-family: 'Press Start 2P', monospace; font-size: 6px;
+  padding: 7px 9px; cursor: pointer; color: #000;
+  background: #c0c0c0; border: 3px solid;
+  border-color: #fff #808080 #808080 #fff;
+  white-space: nowrap;
+}
+.diff-btn.active { border-color: #808080 #fff #fff #808080; background: #a0a0a0; }
+#ms-frame {
+  background: #c0c0c0;
+  border: 4px solid; border-color: #fff #808080 #808080 #fff;
+  padding: 6px; flex-shrink: 0;
+  box-shadow: 3px 3px 0 #000;
+}
+#ms-header {
+  background: #c0c0c0;
+  border: 2px solid; border-color: #808080 #fff #fff #808080;
+  padding: 6px 10px; display: flex; align-items: center;
+  justify-content: space-between; margin-bottom: 6px; gap: 8px;
+}
+.lcd {
+  background: #000; color: #f00;
+  font-family: 'VT323', monospace; font-size: 28px; letter-spacing: 2px;
+  padding: 1px 6px; border: 2px inset #555;
+  min-width: 56px; text-align: right; line-height: 1.1;
+}
+#face-btn {
+  width: 38px; height: 38px; font-size: 20px;
+  background: #c0c0c0; border: 3px solid;
+  border-color: #fff #808080 #808080 #fff;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; cursor: pointer;
+}
+#face-btn:active { border-color: #808080 #fff #fff #808080; }
+#board-wrap {
+  border: 3px solid; border-color: #808080 #fff #fff #808080;
+  line-height: 0; overflow: auto;
+  max-width: calc(100vw - 40px);
+}
+#board { display: inline-grid; }
+.cell {
+  display: flex; align-items: center; justify-content: center;
+  font-weight: bold; cursor: pointer;
+  background: #c0c0c0; border: 2px solid;
+  border-color: #fff #808080 #808080 #fff;
+  font-family: 'Press Start 2P', monospace;
+  position: relative; touch-action: none;
+}
+.cell.pressed { border-color: #808080 #fff #fff #808080; background: #b0b0b0; }
+.cell.revealed { background: #d0b896; border: 1px solid #9a8060; cursor: default; }
+.cell.mine-hit { background: #e94560 !important; }
+.cell[data-n="1"] { color: #1565c0; }
+.cell[data-n="2"] { color: #2e7d32; }
+.cell[data-n="3"] { color: #c62828; }
+.cell[data-n="4"] { color: #4a148c; }
+.cell[data-n="5"] { color: #bf360c; }
+.cell[data-n="6"] { color: #006064; }
+.cell[data-n="7"] { color: #212121; }
+.cell[data-n="8"] { color: #757575; }
+#flag-row { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+#flag-toggle {
+  font-family: 'Press Start 2P', monospace; font-size: 7px;
+  padding: 9px 16px; cursor: pointer;
+  background: #c0c0c0; border: 3px solid;
+  border-color: #fff #808080 #808080 #fff;
+  display: flex; align-items: center; gap: 6px; color: #000;
+}
+#flag-toggle.on {
+  border-color: #808080 #fff #fff #808080;
+  background: #ffd700; color: #333;
+}
+#msg {
+  color: #888; font-size: 6px; text-align: center;
+  flex-shrink: 0; min-height: 12px; line-height: 2;
+}
+@keyframes press-ring {
+  from { transform: scale(0.5); opacity: 1; }
+  to   { transform: scale(1.6); opacity: 0; }
+}
+.long-press-ring {
+  position: absolute; inset: 0; border-radius: 50%;
+  border: 3px solid #e94560;
+  animation: press-ring 0.45s ease-out forwards;
+  pointer-events: none;
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <h1>💣 MINESWEEPER</h1>
+  <div id="diff-row">
+    <button class="diff-btn active" id="d0" onclick="setDiff(0)">初級 9×9</button>
+    <button class="diff-btn" id="d1" onclick="setDiff(1)">中級 16×16</button>
+    <button class="diff-btn" id="d2" onclick="setDiff(2)">上級 30×16</button>
+  </div>
+  <div id="ms-frame">
+    <div id="ms-header">
+      <div class="lcd" id="mine-lcd">010</div>
+      <div id="face-btn" onclick="initGame()">😊</div>
+      <div class="lcd" id="time-lcd">000</div>
+    </div>
+    <div id="board-wrap">
+      <div id="board"></div>
+    </div>
+  </div>
+  <div id="flag-row">
+    <button id="flag-toggle" onclick="toggleFlagMode()">🚩 <span id="ftxt">旗モード OFF</span></button>
+  </div>
+  <div id="msg">タップ: 開く ／ 長押し・旗モードON: 旗を立てる</div>
+</div>
+
+<script>
+const DIFFS=[{r:9,c:9,m:10},{r:16,c:16,m:40},{r:16,c:30,m:99}];
+let diff=0,rows,cols,mines;
+let board=[],rev=[],flag=[],mPos=[];
+let state='idle',timerInt=null,secs=0,first=true;
+let flagMode=false;
+
+const fmt=n=>String(Math.min(999,Math.max(-99,n))).padStart(3,'0');
+
+function setDiff(d){
+  diff=d;
+  [0,1,2].forEach(i=>document.getElementById('d'+i).classList.toggle('active',i===d));
+  initGame();
+}
+
+function toggleFlagMode(){
+  flagMode=!flagMode;
+  document.getElementById('flag-toggle').classList.toggle('on',flagMode);
+  document.getElementById('ftxt').textContent=flagMode?'旗モード ON':'旗モード OFF';
+}
+
+function calcCellSize(){
+  const vw=window.innerWidth-40;
+  const vh=window.innerHeight-230;
+  return Math.max(18,Math.min(36,Math.floor(vw/cols),Math.floor(vh/rows)));
+}
+
+function initGame(){
+  clearInterval(timerInt);secs=0;state='idle';first=true;
+  const cfg=DIFFS[diff];rows=cfg.r;cols=cfg.c;mines=cfg.m;
+  board=Array(rows*cols).fill(0);
+  rev=Array(rows*cols).fill(false);
+  flag=Array(rows*cols).fill(false);
+  mPos=[];
+  document.getElementById('face-btn').textContent='😊';
+  document.getElementById('time-lcd').textContent='000';
+  document.getElementById('mine-lcd').textContent=fmt(mines);
+  document.getElementById('msg').textContent='タップ: 開く ／ 長押し・旗モードON: 旗を立てる';
+  buildBoard();
+}
+
+function buildBoard(){
+  const sz=calcCellSize();
+  const bd=document.getElementById('board');
+  bd.style.gridTemplateColumns=`repeat(${cols},${sz}px)`;
+  bd.innerHTML='';
+  const fs=Math.max(7,Math.floor(sz*0.38))+'px';
+  for(let i=0;i<rows*cols;i++){
+    const el=document.createElement('div');
+    el.className='cell';el.dataset.i=i;
+    el.style.cssText=`width:${sz}px;height:${sz}px;font-size:${fs}`;
+    attachTouch(el,i);
+    bd.appendChild(el);
+  }
+}
+
+/* タッチ＆クリック処理 */
+let lpTimer=null,touchMoved=false,activeCell=null;
+
+function attachTouch(el,i){
+  el.addEventListener('touchstart',e=>{
+    e.preventDefault();
+    touchMoved=false; activeCell=i;
+    el.classList.add('pressed');
+    if(state==='idle'||state==='playing')
+      document.getElementById('face-btn').textContent='😮';
+    lpTimer=setTimeout(()=>{
+      if(!touchMoved){ showRing(el); onFlag(i); }
+    },450);
+  },{passive:false});
+
+  el.addEventListener('touchmove',()=>{
+    touchMoved=true; clearTimeout(lpTimer);
+    el.classList.remove('pressed');
+  },{passive:false});
+
+  el.addEventListener('touchend',e=>{
+    e.preventDefault();
+    clearTimeout(lpTimer);
+    el.classList.remove('pressed');
+    if(state==='playing'||state==='idle')
+      document.getElementById('face-btn').textContent='😊';
+    if(!touchMoved && activeCell===i){
+      if(flagMode) onFlag(i); else onOpen(i);
+    }
+    activeCell=null;
+  },{passive:false});
+
+  el.addEventListener('touchcancel',()=>{
+    clearTimeout(lpTimer); el.classList.remove('pressed'); activeCell=null;
+  });
+
+  el.addEventListener('click',()=>{ if(flagMode) onFlag(i); else onOpen(i); });
+  el.addEventListener('contextmenu',e=>{e.preventDefault();onFlag(i);});
+}
+
+function showRing(el){
+  const r=document.createElement('div');
+  r.className='long-press-ring';
+  el.appendChild(r);
+  setTimeout(()=>r.remove(),500);
+}
+
+/* ゲームロジック */
+function nb(i){
+  const r=Math.floor(i/cols),c=i%cols,res=[];
+  for(let dr=-1;dr<=1;dr++) for(let dc=-1;dc<=1;dc++){
+    if(!dr&&!dc) continue;
+    const nr=r+dr,nc=c+dc;
+    if(nr>=0&&nr<rows&&nc>=0&&nc<cols) res.push(nr*cols+nc);
+  }
+  return res;
+}
+
+function nbRadius(i,rad){
+  const r=Math.floor(i/cols),c=i%cols,res=new Set([i]);
+  for(let dr=-rad;dr<=rad;dr++) for(let dc=-rad;dc<=rad;dc++){
+    const nr=r+dr,nc=c+dc;
+    if(nr>=0&&nr<rows&&nc>=0&&nc<cols) res.add(nr*cols+nc);
+  }
+  return [...res];
+}
+
+function placeMines(safe){
+  const safeZone=new Set(nbRadius(safe,2));
+  let pool=[...Array(rows*cols).keys()].filter(i=>!safeZone.has(i));
+  if(pool.length<mines)
+    pool=[...Array(rows*cols).keys()].filter(i=>i!==safe&&!nb(safe).includes(i));
+  for(let m=0;m<Math.min(mines,pool.length);m++){
+    const ri=Math.floor(Math.random()*pool.length);
+    mPos.push(pool[ri]); pool.splice(ri,1);
+  }
+  mPos.forEach(mi=>board[mi]=-1);
+  for(let i=0;i<rows*cols;i++){
+    if(board[i]===-1) continue;
+    board[i]=nb(i).filter(n=>board[n]===-1).length;
+  }
+}
+
+function findNearestZero(from){
+  const vis=new Set([from]),q=[from];
+  while(q.length){
+    const cur=q.shift();
+    if(board[cur]===0) return cur;
+    nb(cur).forEach(n=>{ if(!vis.has(n)){vis.add(n);q.push(n);} });
+  }
+  return -1;
+}
+
+function startTimer(){
+  timerInt=setInterval(()=>{
+    secs=Math.min(999,secs+1);
+    document.getElementById('time-lcd').textContent=fmt(secs);
+  },1000);
+}
+
+function getCell(i){ return document.querySelector(`.cell[data-i="${i}"]`); }
+
+function onOpen(i){
+  if(state==='won'||state==='lost') return;
+  if(rev[i]){ chord(i); return; }
+  if(flag[i]) return;
+  if(first){
+    first=false; state='playing'; placeMines(i); startTimer();
+    if(board[i]!==0){ const z=findNearestZero(i); if(z!==-1) flood(z); }
+  }
+  if(board[i]===-1){ explode(i); return; }
+  flood(i); checkWin();
+}
+
+function flood(i){
+  if(rev[i]||flag[i]) return;
+  rev[i]=true;
+  const el=getCell(i);
+  el.classList.add('revealed');
+  if(board[i]>0){ el.textContent=board[i]; el.dataset.n=board[i]; }
+  else el.textContent='';
+  if(board[i]===0) nb(i).forEach(n=>flood(n));
+}
+
+function chord(i){
+  if(!rev[i]||board[i]<=0) return;
+  const neighbors=nb(i);
+  if(neighbors.filter(n=>flag[n]).length===board[i]){
+    let hitIdx=-1;
+    neighbors.forEach(n=>{
+      if(!flag[n]&&!rev[n]){
+        if(board[n]===-1) hitIdx=n; else flood(n);
+      }
+    });
+    if(hitIdx!==-1) explode(hitIdx); else checkWin();
+  }
+}
+
+function onFlag(i){
+  if(state==='won'||state==='lost'||rev[i]) return;
+  if(state==='idle'){ state='playing'; first=false; placeMines(-1); startTimer(); }
+  flag[i]=!flag[i];
+  const el=getCell(i);
+  el.classList.toggle('flagged',flag[i]);
+  el.textContent=flag[i]?'🚩':'';
+  document.getElementById('mine-lcd').textContent=fmt(mines-flag.filter(Boolean).length);
+}
+
+function explode(hitIdx){
+  clearInterval(timerInt); state='lost';
+  document.getElementById('face-btn').textContent='😵';
+  document.getElementById('msg').textContent='💥 ゲームオーバー！顔ボタンで再スタート';
+  mPos.forEach(mi=>{
+    const el=getCell(mi);
+    el.classList.add('revealed');
+    el.textContent='💣';
+    if(mi===hitIdx) el.classList.add('mine-hit');
+  });
+  flag.forEach((f,i)=>{ if(f&&board[i]!==-1){ getCell(i).textContent='❌'; } });
+}
+
+function checkWin(){
+  if(rev.filter(r=>!r).length===mines){
+    clearInterval(timerInt); state='won';
+    document.getElementById('face-btn').textContent='😎';
+    document.getElementById('msg').textContent=`🎉 クリア！ ${secs}秒でした！`;
+    document.getElementById('mine-lcd').textContent='000';
+    mPos.forEach(mi=>{
+      if(!flag[mi]){
+        flag[mi]=true;
+        const el=getCell(mi); el.textContent='🚩'; el.classList.add('flagged');
+      }
+    });
+  }
+}
+
+window.addEventListener('resize',buildBoard);
+initGame();
+</script>
+</body>
+</html>
