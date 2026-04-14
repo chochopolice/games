@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>青鬼 - 壁突破</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+html,body{width:100%;height:100%;overflow:hidden;background:#0a0a18;font-family:monospace;}
+
+#app{
+  display:flex;flex-direction:column;
+  width:100%;height:100%;
+  align-items:center;justify-content:space-between;
+}
+
+/* HUD */
+#hud{
+  width:100%;display:flex;align-items:center;justify-content:space-between;
+  padding:8px 14px 4px;
+  background:rgba(0,0,0,0.5);
+  flex-shrink:0;
+}
+#hud-left,#hud-right{font-size:14px;color:#aac;}
+#hud-center{font-size:11px;color:#f90;text-align:center;max-width:55%;}
+
+/* Canvas */
+#canvaswrap{
+  position:relative;
+  flex:1;display:flex;align-items:center;justify-content:center;
+  width:100%;overflow:hidden;
+}
+#canvas{display:block;image-rendering:pixelated;touch-action:none;}
+#ov{
+  position:absolute;top:0;left:0;width:100%;height:100%;
+  display:flex;align-items:center;justify-content:center;
+}
+
+/* Dpad */
+#ctrl{
+  flex-shrink:0;width:100%;
+  display:flex;align-items:center;justify-content:center;
+  padding:8px 0 max(8px,env(safe-area-inset-bottom));
+  background:rgba(0,0,0,0.4);
+}
+#dpad{
+  display:grid;
+  grid-template-areas:
+    ". u ."
+    "l d r";
+  grid-template-columns:1fr 1fr 1fr;
+  grid-template-rows:1fr 1fr;
+  gap:6px;
+  width:220px;height:148px;
+}
+.db{
+  background:rgba(40,50,100,0.85);
+  border:2px solid rgba(100,140,255,0.4);
+  border-radius:16px;
+  color:#8af;font-size:28px;
+  display:flex;align-items:center;justify-content:center;
+  cursor:pointer;
+  touch-action:none;
+  -webkit-user-select:none;user-select:none;
+  box-shadow:0 4px 16px rgba(0,0,0,0.6),inset 0 1px 0 rgba(255,255,255,0.08);
+  transition:background 0.05s,transform 0.05s;
+}
+.db.pressed{
+  background:rgba(80,100,200,0.9);
+  transform:scale(0.91);
+  box-shadow:0 2px 8px rgba(0,0,0,0.6),inset 0 2px 4px rgba(0,0,0,0.4);
+}
+#bu{grid-area:u;}
+#bl{grid-area:l;}
+#bd{grid-area:d;}
+#br{grid-area:r;}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="hud">
+    <div id="hud-left">🗝 <span id="hk">0</span></div>
+    <div id="hud-center" id="msg">鍵を拾ってひびの壁を突破！</div>
+    <div id="hud-right">💥 <span id="hb">0</span>/3</div>
+  </div>
+  <div id="canvaswrap">
+    <canvas id="canvas"></canvas>
+    <div id="ov"></div>
+  </div>
+  <div id="ctrl">
+    <div id="dpad">
+      <button class="db" id="bu">▲</button>
+      <button class="db" id="bl">◀</button>
+      <button class="db" id="bd">▼</button>
+      <button class="db" id="br">▶</button>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+const canvas = document.getElementById('canvas');
+const ctx    = canvas.getContext('2d');
+const ov     = document.getElementById('ov');
+const hkEl   = document.getElementById('hk');
+const hbEl   = document.getElementById('hb');
+const msgEl  = document.getElementById('hud-center');
+
+// キャンバスサイズをウィンドウに合わせてリサイズ
+const COLS=15, ROWS=15;
+let TW=32;
+function resize(){
+  const wrap = document.getElementById('canvaswrap');
+  const W = wrap.clientWidth, H = wrap.clientHeight;
+  TW = Math.floor(Math.min(W,H) / COLS);
+  canvas.width  = TW * COLS;
+  canvas.height = TW * ROWS;
+}
+resize();
+window.addEventListener('resize', ()=>{ resize(); });
+
+const WALL=0, FLOOR=1, CRACK=2, EXIT=3;
+let G, keyItems, crackWalls, exitPos, player, oni;
+let held, broken, graceTime, playerMT, oniMT;
+let oniMode, oniDir, alertT, shakeT, gameState;
+let bfx=[], exitAppear=0;
+const pressedKeys=new Set();
+
+// ==== 迷路生成 ====
+function makeMaze(){
+  const g=[];
+  for(let r=0;r<ROWS;r++){g[r]=[];for(let c=0;c<COLS;c++)g[r][c]=WALL;}
+  function carve(r,c){
+    g[r][c]=FLOOR;
+    const d=[[0,2],[0,-2],[2,0],[-2,0]].sort(()=>Math.random()-0.5);
+    for(const[dr,dc]of d){
+      const nr=r+dr,nc=c+dc;
+      if(nr>0&&nr<ROWS-1&&nc>0&&nc<COLS-1&&g[nr][nc]===WALL){
+        g[r+dr/2][c+dc/2]=FLOOR; carve(nr,nc);
+      }
+    }
+  }
+  carve(1,1);
+  for(let r=1;r<ROWS-1;r++) for(let c=1;c<COLS-1;c++){
+    if(g[r][c]===WALL&&Math.random()<0.08){
+      let adj=0;
+      if(g[r-1]?.[c]===FLOOR)adj++; if(g[r+1]?.[c]===FLOOR)adj++;
+      if(g[r][c-1]===FLOOR)adj++;   if(g[r][c+1]===FLOOR)adj++;
+      if(adj>=2)g[r][c]=FLOOR;
+    }
+  }
+  return g;
+}
+
+function findCracks(){
+  const cands=[];
+  for(let r=1;r<ROWS-1;r++) for(let c=1;c<COLS-1;c++){
+    if(G[r][c]!==WALL)continue;
+    if(Math.abs(r-1)+Math.abs(c-1)<3)continue;
+    const h=G[r][c-1]===FLOOR&&G[r][c+1]===FLOOR;
+    const v=G[r-1][c]===FLOOR&&G[r+1][c]===FLOOR;
+    if(h||v)cands.push([r,c]);
+  }
+  cands.sort(()=>Math.random()-0.5);
+  const sel=[];
+  for(const[r,c]of cands){
+    if(sel.every(([sr,sc])=>Math.abs(sr-r)+Math.abs(sc-c)>=5)){sel.push([r,c]);if(sel.length===3)break;}
+  }
+  for(const[r,c]of cands){if(sel.length>=3)break;if(!sel.some(([sr,sc])=>sr===r&&sc===c))sel.push([r,c]);}
+  return sel;
+}
+
+const DIR4=[[0,1],[0,-1],[1,0],[-1,0]];
+function isWalkable(r,c){return r>=0&&r<ROWS&&c>=0&&c<COLS&&(G[r][c]===FLOOR||G[r][c]===EXIT);}
+function bfsReach(sr,sc){
+  const vis=[];for(let r=0;r<ROWS;r++){vis[r]=[];for(let c=0;c<COLS;c++)vis[r][c]=false;}
+  const q=[[sr,sc]],res=[];vis[sr][sc]=true;
+  while(q.length){const[r,c]=q.shift();res.push([r,c]);for(const[dr,dc]of DIR4){const nr=r+dr,nc=c+dc;if(nr>=0&&nr<ROWS&&nc>=0&&nc<COLS&&!vis[nr][nc]&&isWalkable(nr,nc)){vis[nr][nc]=true;q.push([nr,nc]);}}}
+  return res;
+}
+function bfsPath(fr,fc,tr,tc){
+  const vis=[],par=[];
+  for(let r=0;r<ROWS;r++){vis[r]=[];par[r]=[];for(let c=0;c<COLS;c++){vis[r][c]=false;par[r][c]=null;}}
+  const q=[[fr,fc]];vis[fr][fc]=true;
+  while(q.length){
+    const[r,c]=q.shift();
+    if(r===tr&&c===tc){const p=[[r,c]];let cu=[r,c];while(par[cu[0]][cu[1]]){cu=par[cu[0]][cu[1]];p.unshift(cu);}return p;}
+    for(const[dr,dc]of DIR4){const nr=r+dr,nc=c+dc;if(nr>=0&&nr<ROWS&&nc>=0&&nc<COLS&&!vis[nr][nc]&&isWalkable(nr,nc)){vis[nr][nc]=true;par[nr][nc]=[r,c];q.push([nr,nc]);}}
+  }
+  return[];
+}
+function hasLOS(ar,ac,br,bc){
+  const dx=bc-ac,dy=br-ar,d=Math.sqrt(dx*dx+dy*dy);
+  if(d>8)return false;
+  const s=Math.ceil(d*2);
+  for(let i=1;i<s;i++){const gr=Math.round(ar+dy*i/s),gc=Math.round(ac+dx*i/s);if(gr===br&&gc===bc)break;if(!isWalkable(gr,gc))return false;}
+  return true;
+}
+function oniPatrol(){
+  const dirs=[...DIR4].sort(()=>Math.random()-0.5);
+  if(oniDir)dirs.sort((a,b)=>(a[0]===oniDir[0]&&a[1]===oniDir[1])?-1:(b[0]===oniDir[0]&&b[1]===oniDir[1])?1:0);
+  for(const[dr,dc]of dirs){const nr=oni.r+dr,nc=oni.c+dc;if(isWalkable(nr,nc)){oniDir=[dr,dc];oni.r=nr;oni.c=nc;return;}}
+  oniDir=null;
+}
+function findExit(reachable){
+  const cands=reachable.filter(([r,c])=>G[r][c]===FLOOR&&(Math.abs(r-1)+Math.abs(c-1))>8)
+    .sort((a,b)=>(Math.abs(b[0]-1)+Math.abs(b[1]-1))-(Math.abs(a[0]-1)+Math.abs(a[1]-1)));
+  return cands[0]||[ROWS-2,COLS-2];
+}
+
+function initGame(){
+  resize();
+  G=makeMaze();
+  const cracks=findCracks();
+  crackWalls=cracks.map(([r,c])=>({r,c,broken:false}));
+  cracks.forEach(([r,c])=>{G[r][c]=CRACK;});
+  player={r:1,c:1};
+  const reachable=bfsReach(1,1);
+  const oc=reachable.reduce((b,e)=>Math.abs(e[0]-1)+Math.abs(e[1]-1)>Math.abs(b[0]-1)+Math.abs(b[1]-1)?e:b,reachable[0]);
+  oni={r:oc[0],c:oc[1]};
+  exitPos=findExit(reachable);
+  const pool=reachable.filter(([r,c])=>G[r][c]===FLOOR&&!(r===1&&c===1)&&!(r===oni.r&&c===oni.c)&&!(r===exitPos[0]&&c===exitPos[1])).sort(()=>Math.random()-0.5);
+  keyItems=[];
+  for(const[r,c]of pool){if(keyItems.every(k=>Math.abs(k.r-r)+Math.abs(k.c-c)>=5)){keyItems.push({r,c,got:false});if(keyItems.length===3)break;}}
+  for(const[r,c]of pool){if(keyItems.length>=3)break;if(!keyItems.some(k=>k.r===r&&k.c===c))keyItems.push({r,c,got:false});}
+  held=0;broken=0;graceTime=3.0;playerMT=0;oniMT=0;alertT=0;shakeT=0;exitAppear=0;
+  oniMode='patrol';oniDir=null;gameState='play';bfx=[];
+  prevTime=null;ov.innerHTML='';
+  hkEl.textContent='0';hbEl.textContent='0';
+  msgEl.textContent='鍵を拾ってひびの壁を突破！';
+}
+
+function breakCrack(r,c){
+  const w=crackWalls.find(w=>w.r===r&&w.c===c&&!w.broken);
+  if(!w||held<=0)return false;
+  w.broken=true;G[r][c]=FLOOR;held--;broken++;
+  bfx.push({r,c,t:1.0});
+  hkEl.textContent=held;hbEl.textContent=broken;
+  if(broken>=3){G[exitPos[0]][exitPos[1]]=EXIT;exitAppear=1.0;msgEl.textContent='🚪 出口が現れた！逃げろ！';}
+  else msgEl.textContent=`💥 壁を突破！(${broken}/3) あと${3-broken}か所！`;
+  return true;
+}
+
+// ==== 描画 ====
+function drawMap(t){
+  for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
+    const x=c*TW,y=r*TW,tile=G[r][c];
+    if(tile===FLOOR){
+      ctx.fillStyle='#14203a';ctx.fillRect(x,y,TW,TW);
+      if((r+c)%2===0){ctx.fillStyle='rgba(255,255,255,0.015)';ctx.fillRect(x,y,TW,TW);}
+      ctx.strokeStyle='rgba(0,0,0,0.25)';ctx.lineWidth=0.5;ctx.strokeRect(x+0.5,y+0.5,TW-1,TW-1);
+    } else if(tile===WALL){
+      ctx.fillStyle='#0c0c1e';ctx.fillRect(x,y,TW,TW);
+      ctx.fillStyle='#131328';ctx.fillRect(x+1,y+1,TW-2,TW-2);
+      ctx.fillStyle='rgba(255,255,255,0.03)';
+      if(r%2===0){ctx.fillRect(x+2,y+4,TW-4,TW/2-5);ctx.fillRect(x+2,y+TW/2+1,TW-4,TW/2-4);}
+      else{ctx.fillRect(x+2,y+4,TW/2-3,TW/2-5);ctx.fillRect(x+TW/2,y+4,TW/2-2,TW/2-5);ctx.fillRect(x+2,y+TW/2+1,TW-4,TW/2-4);}
+      ctx.strokeStyle='rgba(0,0,0,0.4)';ctx.lineWidth=0.5;ctx.strokeRect(x+0.5,y+0.5,TW-1,TW-1);
+    } else if(tile===CRACK){
+      ctx.fillStyle='#0c0c1e';ctx.fillRect(x,y,TW,TW);
+      ctx.fillStyle='#1e1640';ctx.fillRect(x+1,y+1,TW-2,TW-2);
+      ctx.fillStyle='rgba(180,140,255,0.06)';ctx.fillRect(x+2,y+4,TW-4,TW/2-5);ctx.fillRect(x+2,y+TW/2+1,TW-4,TW/2-4);
+      const glow=0.5+0.3*Math.sin(t*5);
+      ctx.strokeStyle=`rgba(255,150,40,${glow})`;ctx.lineWidth=1.5;
+      ctx.beginPath();ctx.moveTo(x+TW/2,y+2);ctx.lineTo(x+TW/2-4,y+TW/2+2);ctx.lineTo(x+TW/2+3,y+TW-3);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(x+TW/2-4,y+TW/2+2);ctx.lineTo(x+4,y+TW*0.68);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(x+TW/2+2,y+TW/2-3);ctx.lineTo(x+TW-5,y+TW*0.3);ctx.stroke();
+      if(held>0){
+        ctx.fillStyle=`rgba(255,220,60,${0.7+0.3*Math.sin(t*8)})`;
+        ctx.font=`bold ${Math.max(6,TW*0.22)}px monospace`;ctx.textAlign='center';ctx.textBaseline='middle';
+        ctx.fillText('BREAK',x+TW/2,y+TW/2);ctx.textAlign='left';ctx.textBaseline='alphabetic';
+      }
+    } else if(tile===EXIT){
+      ctx.fillStyle='#0a1a0a';ctx.fillRect(x,y,TW,TW);
+      const gp=0.4+0.35*Math.sin(t*4);
+      ctx.fillStyle=`rgba(60,220,80,${gp*0.5})`;ctx.fillRect(x,y,TW,TW);
+      ctx.strokeStyle=`rgba(80,255,100,${0.7+0.3*Math.sin(t*3)})`;ctx.lineWidth=2;ctx.strokeRect(x+2,y+2,TW-4,TW-4);
+      ctx.fillStyle=`rgba(120,255,130,${0.8+0.2*Math.sin(t*5)})`;
+      ctx.font=`bold ${TW*0.55}px monospace`;ctx.textAlign='center';ctx.textBaseline='middle';
+      ctx.fillText('出',x+TW/2,y+TW/2);ctx.textAlign='left';ctx.textBaseline='alphabetic';
+    }
+  }
+}
+function drawKeys(t){
+  for(const k of keyItems){
+    if(k.got)continue;
+    const x=k.c*TW+TW/2,y=k.r*TW+TW/2,bob=Math.sin(t*2.8)*3;
+    const r0=TW*0.42;
+    ctx.fillStyle='rgba(255,215,0,0.2)';ctx.beginPath();ctx.arc(x,y+bob,r0,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#ffd700';ctx.beginPath();ctx.arc(x,y+bob-r0*0.4,r0*0.38,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#0a0a14';ctx.beginPath();ctx.arc(x,y+bob-r0*0.4,r0*0.18,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#ffd700';
+    ctx.fillRect(x-1.5,y+bob,3,r0*0.7);ctx.fillRect(x+0.5,y+bob+r0*0.25,4,2);ctx.fillRect(x+0.5,y+bob+r0*0.5,4,2);
+  }
+}
+function drawBfx(){
+  bfx=bfx.filter(e=>e.t>0);
+  for(const e of bfx){
+    e.t-=0.025;
+    const a=e.t,cx=e.c*TW+TW/2,cy=e.r*TW+TW/2;
+    ctx.strokeStyle=`rgba(255,220,80,${a})`;ctx.lineWidth=3;
+    ctx.beginPath();ctx.arc(cx,cy,(1-a)*TW*2.5,0,Math.PI*2);ctx.stroke();
+    ctx.fillStyle=`rgba(255,200,60,${a*0.5})`;ctx.fillRect(e.c*TW,e.r*TW,TW,TW);
+    for(let i=0;i<8;i++){const ang=i/8*Math.PI*2,rd=(1-a)*TW*2.5;ctx.fillStyle=`rgba(255,180,30,${a*0.9})`;ctx.fillRect(cx+Math.cos(ang)*rd-3,cy+Math.sin(ang)*rd-3,6,6);}
+  }
+  if(exitAppear>0)exitAppear=Math.max(0,exitAppear-0.02);
+}
+function drawPlayer(){
+  const x=player.c*TW+TW/2,y=player.r*TW+TW/2,s=TW/32;
+  ctx.fillStyle='#c09060';ctx.fillRect(x-7*s,y-8*s,14*s,16*s);
+  ctx.fillStyle='#e8c97e';ctx.beginPath();ctx.arc(x,y-14*s,9*s,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='#333';ctx.fillRect(x-4*s,y-16*s,3*s,3*s);ctx.fillRect(x+1*s,y-16*s,3*s,3*s);
+  if(held>0){
+    ctx.fillStyle='rgba(255,220,50,0.95)';ctx.font=`bold ${Math.max(10,TW*0.38)}px monospace`;
+    ctx.textAlign='center';ctx.textBaseline='alphabetic';ctx.fillText('🗝'+held,x,y-26*s);ctx.textAlign='left';
+  }
+}
+function drawOni(t,grace){
+  const x=oni.c*TW+TW/2,y=oni.r*TW+TW/2,bob=Math.sin(t*3)*2.5,s=TW/32;
+  if(oniMode==='chase'){const a=0.1+0.08*Math.sin(t*8);ctx.fillStyle=`rgba(255,40,40,${a})`;ctx.beginPath();ctx.arc(x,y+bob,24*s,0,Math.PI*2);ctx.fill();}
+  ctx.globalAlpha=grace>0?0.35+0.2*Math.sin(t*4):1;
+  ctx.fillStyle='#1a2e90';ctx.beginPath();ctx.ellipse(x,y+bob,11*s,14*s,0,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle=oniMode==='chase'?'#7ab0ff':'#4d88ff';ctx.beginPath();ctx.ellipse(x,y+bob-2*s,10*s,12*s,0,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='#fff';ctx.fillRect(x-5*s,y+bob-7*s,4*s,4*s);ctx.fillRect(x+1*s,y+bob-7*s,4*s,4*s);
+  ctx.fillStyle=oniMode==='chase'?'#ff2020':'#000';ctx.fillRect(x-4*s,y+bob-6*s,2*s,2*s);ctx.fillRect(x+2*s,y+bob-6*s,2*s,2*s);
+  ctx.fillStyle='#223399';
+  ctx.beginPath();ctx.moveTo(x-5*s,y+bob-10*s);ctx.lineTo(x-8*s,y+bob-20*s);ctx.lineTo(x-1*s,y+bob-11*s);ctx.closePath();ctx.fill();
+  ctx.beginPath();ctx.moveTo(x+5*s,y+bob-10*s);ctx.lineTo(x+8*s,y+bob-20*s);ctx.lineTo(x+1*s,y+bob-11*s);ctx.closePath();ctx.fill();
+  ctx.globalAlpha=1;
+  if(grace>0){ctx.fillStyle='rgba(150,190,255,0.9)';ctx.font=`bold ${Math.max(9,TW*0.3)}px monospace`;ctx.textAlign='center';ctx.textBaseline='alphabetic';ctx.fillText(Math.ceil(grace)+'秒後に動く',x,y+bob-26*s);ctx.textAlign='left';}
+  if(alertT>0.5&&oniMode==='chase'){ctx.fillStyle=`rgba(255,80,0,${alertT})`;ctx.font=`bold ${Math.max(12,TW*0.44)}px monospace`;ctx.textAlign='center';ctx.textBaseline='alphabetic';ctx.fillText('！！！',x,y+bob-28*s);ctx.textAlign='left';}
+}
+function drawFog(){
+  const px=player.c*TW+TW/2,py=player.r*TW+TW/2;
+  const g=ctx.createRadialGradient(px,py,TW*1.8,px,py,TW*5.5);
+  g.addColorStop(0,'rgba(0,0,0,0)');g.addColorStop(0.55,'rgba(0,0,10,0.25)');g.addColorStop(1,'rgba(0,0,10,0.91)');
+  ctx.fillStyle=g;ctx.fillRect(0,0,canvas.width,canvas.height);
+}
+function showResult(){
+  const win=gameState==='win';
+  ov.innerHTML=`<div style="background:rgba(0,0,0,0.92);border:2px solid ${win?'#3a6':'#a33'};padding:28px 36px;border-radius:14px;color:${win?'#8fd':'#f88'};text-align:center;">
+<div style="font-size:28px;font-weight:bold;margin-bottom:10px;">${win?'🎉 脱出成功！':'💀 捕まった…'}</div>
+<div style="font-size:14px;margin-bottom:20px;">${win?'壁を突破して出口から脱出！':'💥 '+broken+'/3 突破'}</div>
+<button onclick="initGame()" style="background:${win?'#1a4a2a':'#3a0a0a'};color:${win?'#8fd':'#f88'};border:2px solid ${win?'#3a6':'#a33'};padding:14px 32px;cursor:pointer;font-family:monospace;font-size:16px;border-radius:8px;touch-action:manipulation;">もう一度</button>
+</div>`;
+}
+
+// ==== ゲームループ ====
+let prevTime=null;
+function loop(now){
+  requestAnimationFrame(loop);
+  if(!prevTime){prevTime=now;return;}
+  const dt=Math.min((now-prevTime)/1000,0.12);prevTime=now;
+  const t=now/1000;
+
+  if(gameState==='play'){
+    if(graceTime>0){graceTime=Math.max(0,graceTime-dt);if(graceTime>0)msgEl.textContent=`青鬼が動き出すまで ${Math.ceil(graceTime)} 秒！`;}
+    let dr=0,dc=0;
+    if(pressedKeys.has('ArrowUp')||pressedKeys.has('w'))    dr=-1;
+    if(pressedKeys.has('ArrowDown')||pressedKeys.has('s'))  dr= 1;
+    if(pressedKeys.has('ArrowLeft')||pressedKeys.has('a'))  dc=-1;
+    if(pressedKeys.has('ArrowRight')||pressedKeys.has('d')) dc= 1;
+    playerMT+=dt;
+    if(playerMT>=0.11&&(dr||dc)){
+      playerMT=0;
+      const nr=player.r+dr,nc=player.c+dc;
+      if(nr>=0&&nr<ROWS&&nc>=0&&nc<COLS){
+        if(G[nr][nc]===FLOOR||G[nr][nc]===EXIT){
+          player.r=nr;player.c=nc;
+          if(G[nr][nc]===EXIT){gameState='win';showResult();}
+        } else if(G[nr][nc]===CRACK&&held>0){
+          if(breakCrack(nr,nc)&&gameState!=='win'){player.r=nr;player.c=nc;}
+        }
+      }
+    }
+    for(const k of keyItems){
+      if(!k.got&&k.r===player.r&&k.c===player.c){
+        k.got=true;held++;hkEl.textContent=held;
+        msgEl.textContent=`🗝 鍵を入手！(所持:${held}) ひびの壁に向かえ！`;
+      }
+    }
+    if(graceTime<=0){
+      const see=hasLOS(oni.r,oni.c,player.r,player.c);
+      const md=Math.abs(oni.r-player.r)+Math.abs(oni.c-player.c);
+      if(see){if(oniMode==='patrol'){alertT=1.0;msgEl.textContent='👁 見つかった！逃げろ！';}oniMode='chase';}
+      else if(oniMode==='chase'&&md>4)oniMode='patrol';
+      if(alertT>0)alertT=Math.max(0,alertT-dt*2);
+      oniMT+=dt;
+      const delay=oniMode==='chase'?Math.max(0.30,0.38-broken*0.02):0.75;
+      if(oniMT>=delay){
+        oniMT=0;
+        if(oniMode==='chase'){const p=bfsPath(oni.r,oni.c,player.r,player.c);if(p.length>1){oni.r=p[1][0];oni.c=p[1][1];}}
+        else oniPatrol();
+      }
+    }
+    if(oni.r===player.r&&oni.c===player.c){gameState='dead';shakeT=0.5;showResult();}
+    if(shakeT>0)shakeT-=dt;
+  }
+
+  ctx.fillStyle='#060610';ctx.fillRect(0,0,canvas.width,canvas.height);
+  const sx=gameState==='dead'&&shakeT>0?(Math.random()-0.5)*8:0;
+  const sy=gameState==='dead'&&shakeT>0?(Math.random()-0.5)*8:0;
+  ctx.save();ctx.translate(sx,sy);
+  drawMap(t);drawKeys(t);drawBfx();drawPlayer();drawOni(t,graceTime);drawFog();
+  if(alertT>0){ctx.fillStyle=`rgba(255,50,0,${alertT*0.12})`;ctx.fillRect(0,0,canvas.width,canvas.height);}
+  ctx.restore();
+  if(gameState==='dead'&&shakeT<=0){ctx.fillStyle='rgba(60,0,0,0.45)';ctx.fillRect(0,0,canvas.width,canvas.height);}
+}
+
+// ==== キーボード ====
+document.addEventListener('keydown',e=>{pressedKeys.add(e.key);if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key))e.preventDefault();});
+document.addEventListener('keyup',e=>pressedKeys.delete(e.key));
+
+// ==== Dpadボタン ====
+const dpadMap=[['bu','ArrowUp'],['bd','ArrowDown'],['bl','ArrowLeft'],['br','ArrowRight']];
+for(const[id,key]of dpadMap){
+  const b=document.getElementById(id);
+  const press=()=>{pressedKeys.add(key);b.classList.add('pressed');};
+  const release=()=>{pressedKeys.delete(key);b.classList.remove('pressed');};
+  b.addEventListener('mousedown',press);
+  b.addEventListener('mouseup',release);
+  b.addEventListener('mouseleave',release);
+  b.addEventListener('touchstart',e=>{e.preventDefault();press();},{passive:false});
+  b.addEventListener('touchend',e=>{e.preventDefault();release();},{passive:false});
+  b.addEventListener('touchcancel',e=>{e.preventDefault();release();},{passive:false});
+}
+
+// ==== キャンバス スワイプ ====
+(function(){
+  let tx0=null,ty0=null;
+  const MIN=20;
+  canvas.addEventListener('touchstart',e=>{e.preventDefault();const t=e.changedTouches[0];tx0=t.clientX;ty0=t.clientY;},{passive:false});
+  canvas.addEventListener('touchmove',e=>{
+    e.preventDefault();if(tx0===null)return;
+    const t=e.changedTouches[0],dx=t.clientX-tx0,dy=t.clientY-ty0,adx=Math.abs(dx),ady=Math.abs(dy);
+    if(adx<MIN&&ady<MIN)return;
+    pressedKeys.clear();
+    if(adx>ady)pressedKeys.add(dx>0?'ArrowRight':'ArrowLeft');
+    else pressedKeys.add(dy>0?'ArrowDown':'ArrowUp');
+  },{passive:false});
+  canvas.addEventListener('touchend',e=>{e.preventDefault();pressedKeys.clear();tx0=null;ty0=null;},{passive:false});
+  canvas.addEventListener('touchcancel',e=>{pressedKeys.clear();tx0=null;ty0=null;},{passive:false});
+})();
+
+initGame();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
