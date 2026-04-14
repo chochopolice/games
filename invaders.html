@@ -148,13 +148,13 @@ function gameLoop() {
 
   const alive = enemies.filter(e => e.alive);
   enemyMoveTimer++;
-  const moveInterval = Math.max(4, 40 - alive.length*2 - (level-1)*3);
+  const moveInterval = Math.max(8, alive.length*1.8 + 10 - (level-1)*4);
   if (enemyMoveTimer >= moveInterval) {
     enemyMoveTimer = 0;
     let edgeHit = false;
     for (let e of alive) {
       e.frame ^= 1;
-      e.x += enemyDir * (3 + level*0.5);
+      e.x += enemyDir * (2 + level*0.3);
       if (e.x <= 4 || e.x + e.w >= W-4) edgeHit = true;
     }
     if (edgeHit) {

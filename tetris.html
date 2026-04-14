@@ -45,22 +45,22 @@
 
   .wrapper {
     display: flex;
-    gap: 20px;
+    gap: 16px;
     align-items: flex-start;
-    padding: 20px;
+    padding: 16px;
   }
 
   .side-panel {
-    width: 140px;
+    width: 112px;
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 13px;
   }
 
   .panel-box {
     border: 1px solid rgba(0, 255, 180, 0.25);
     background: rgba(0, 20, 30, 0.6);
-    padding: 12px;
+    padding: 10px;
     position: relative;
   }
 
@@ -73,19 +73,11 @@
   }
 
   .panel-label {
-    font-size: 8px;
+    font-size: 7px;
     letter-spacing: 0.2em;
     color: rgba(0, 255, 180, 0.5);
-    margin-bottom: 8px;
+    margin-bottom: 6px;
     text-transform: uppercase;
-  }
-
-  .panel-value {
-    font-size: 18px;
-    font-weight: 900;
-    color: #00ffb4;
-    text-shadow: 0 0 15px rgba(0, 255, 180, 0.6);
-    letter-spacing: 0.05em;
   }
 
   .game-area {
@@ -98,15 +90,15 @@
   .stats-bar {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
-    gap: 8px;
-    margin-top: 10px;
-    width: 300px;
+    gap: 6px;
+    margin-top: 8px;
+    width: 240px;
   }
 
   .stat-cell {
     border: 1px solid rgba(0, 255, 180, 0.25);
     background: rgba(0, 20, 30, 0.6);
-    padding: 10px 6px;
+    padding: 8px 5px;
     text-align: center;
     position: relative;
   }
@@ -120,28 +112,28 @@
   }
 
   .stat-label {
-    font-size: 7px;
-    letter-spacing: 0.18em;
+    font-size: 6px;
+    letter-spacing: 0.15em;
     color: rgba(0, 255, 180, 0.5);
-    margin-bottom: 5px;
+    margin-bottom: 4px;
     text-transform: uppercase;
   }
 
   .stat-value {
-    font-size: 15px;
+    font-size: 12px;
     font-weight: 900;
     color: #00ffb4;
-    text-shadow: 0 0 12px rgba(0, 255, 180, 0.6);
+    text-shadow: 0 0 10px rgba(0, 255, 180, 0.6);
     letter-spacing: 0.04em;
   }
 
   .game-title {
     text-align: center;
     font-family: 'Press Start 2P', monospace;
-    font-size: 22px;
+    font-size: 18px;
     color: #fff;
     letter-spacing: 0.3em;
-    margin-bottom: 16px;
+    margin-bottom: 13px;
     text-shadow:
       0 0 20px rgba(0, 255, 180, 0.8),
       0 0 40px rgba(0, 255, 180, 0.4),
@@ -157,14 +149,14 @@
       inset 0 0 30px rgba(0, 0, 20, 0.5);
   }
 
-  canvas#next {
+  canvas#next, canvas#hold {
     display: block;
     background: transparent;
   }
 
   .controls-hint {
-    margin-top: 16px;
-    font-size: 7px;
+    margin-top: 13px;
+    font-size: 6px;
     letter-spacing: 0.1em;
     color: rgba(0, 255, 180, 0.3);
     line-height: 2;
@@ -178,7 +170,7 @@
   #overlay {
     position: absolute;
     inset: 0;
-    top: 38px;
+    top: 30px;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -189,30 +181,30 @@
 
   #overlay h2 {
     font-family: 'Press Start 2P', monospace;
-    font-size: 14px;
+    font-size: 12px;
     color: #00ffb4;
     text-shadow: 0 0 20px rgba(0, 255, 180, 0.8);
-    margin-bottom: 24px;
+    margin-bottom: 20px;
     letter-spacing: 0.2em;
     text-align: center;
     line-height: 1.8;
   }
 
   #overlay p {
-    font-size: 8px;
+    font-size: 7px;
     color: rgba(0, 255, 180, 0.5);
     letter-spacing: 0.15em;
-    margin-bottom: 10px;
+    margin-bottom: 8px;
   }
 
   #start-btn {
-    margin-top: 16px;
-    padding: 12px 28px;
+    margin-top: 13px;
+    padding: 10px 22px;
     background: transparent;
     border: 1px solid rgba(0, 255, 180, 0.6);
     color: #00ffb4;
     font-family: 'Press Start 2P', monospace;
-    font-size: 9px;
+    font-size: 8px;
     letter-spacing: 0.2em;
     cursor: pointer;
     text-shadow: 0 0 10px rgba(0, 255, 180, 0.5);
@@ -226,9 +218,9 @@
   }
 
   .level-bar-wrap {
-    height: 4px;
+    height: 3px;
     background: rgba(0, 255, 180, 0.1);
-    margin-top: 8px;
+    margin-top: 6px;
   }
 
   #level-bar {
@@ -244,39 +236,18 @@
 <div class="scanlines"></div>
 
 <div class="wrapper">
-  <!-- Left Panel -->
-  <div class="side-panel">
-    <div class="panel-box">
-      <div class="panel-label">Score</div>
-      <div class="panel-value" id="score">0</div>
-    </div>
-    <div class="panel-box">
-      <div class="panel-label">Level</div>
-      <div class="panel-value" id="level">1</div>
-      <div class="level-bar-wrap"><div id="level-bar"></div></div>
-    </div>
-    <div class="panel-box">
-      <div class="panel-label">Lines</div>
-      <div class="panel-value" id="lines">0</div>
-    </div>
-    <div class="panel-box">
-      <div class="panel-label">Best</div>
-      <div class="panel-value" id="best">0</div>
-    </div>
-  </div>
-
   <!-- Game Area -->
   <div class="game-area">
     <div class="game-title">TETRIS</div>
     <div style="position:relative;">
-      <canvas id="board" width="200" height="400"></canvas>
+      <canvas id="board" width="240" height="480"></canvas>
       <div id="overlay">
         <h2 id="overlay-title">READY?</h2>
         <p id="overlay-sub">スペースキーまたはボタンで開始</p>
         <button id="start-btn">START</button>
       </div>
     </div>
-<!--    <!-- Stats Bar (below game board) -->
+    <!-- Stats Bar (below game board) -->
     <div class="stats-bar">
       <div class="stat-cell">
         <div class="stat-label">Score</div>
@@ -296,7 +267,6 @@
         <div class="stat-value" id="best">0</div>
       </div>
     </div>
--->
     <div class="controls-hint">
       <span>← →</span> 移動　<span>↑</span> 回転　<span>↓</span> 落下　<span>SPC</span> ハードドロップ
     </div>
@@ -306,17 +276,17 @@
   <div class="side-panel">
     <div class="panel-box">
       <div class="panel-label">Next</div>
-      <canvas id="next" width="120" height="100"></canvas>
+      <canvas id="next" width="96" height="80"></canvas>
     </div>
     <div class="panel-box">
       <div class="panel-label">Hold</div>
-      <canvas id="hold" width="120" height="100"></canvas>
+      <canvas id="hold" width="96" height="80"></canvas>
     </div>
   </div>
 </div>
 
 <script>
-const COLS = 10, ROWS = 20, SZ = 30;
+const COLS = 10, ROWS = 20, SZ = 24;
 const COLORS = {
   I: '#00e5ff', O: '#ffe033', T: '#c044ff',
   S: '#44ff88', Z: '#ff4444', J: '#4488ff', L: '#ff8833'
@@ -364,7 +334,6 @@ function randomPiece() {
 }
 
 function rotate(matrix) {
-  const n = matrix.length;
   return matrix[0].map((_, i) => matrix.map(r => r[i]).reverse());
 }
 
@@ -427,16 +396,15 @@ function drawCell(c, x, y, alpha = 1) {
   ctx.fillStyle = c;
   ctx.fillRect(x * SZ + 1, y * SZ + 1, SZ - 2, SZ - 2);
   ctx.fillStyle = 'rgba(255,255,255,0.18)';
-  ctx.fillRect(x * SZ + 1, y * SZ + 1, SZ - 2, 4);
+  ctx.fillRect(x * SZ + 1, y * SZ + 1, SZ - 2, 3);
   ctx.fillStyle = 'rgba(0,0,0,0.3)';
-  ctx.fillRect(x * SZ + 1, y * SZ + SZ - 5, SZ - 2, 4);
+  ctx.fillRect(x * SZ + 1, y * SZ + SZ - 4, SZ - 2, 3);
   ctx.globalAlpha = 1;
 }
 
 function drawGrid() {
   ctx.fillStyle = '#050810';
   ctx.fillRect(0, 0, board.width, board.height);
-
   ctx.strokeStyle = 'rgba(0,255,180,0.05)';
   ctx.lineWidth = 0.5;
   for (let r = 0; r < ROWS; r++) {
@@ -462,7 +430,7 @@ function drawMini(canvas, context, p) {
   context.fillStyle = '#050810';
   context.fillRect(0, 0, canvas.width, canvas.height);
   if (!p) return;
-  const sz = 22;
+  const sz = 18;
   const offX = Math.floor((canvas.width - p.matrix[0].length * sz) / 2);
   const offY = Math.floor((canvas.height - p.matrix.length * sz) / 2);
   for (let r = 0; r < p.matrix.length; r++)
@@ -471,7 +439,7 @@ function drawMini(canvas, context, p) {
         context.fillStyle = p.color;
         context.fillRect(offX + c * sz + 1, offY + r * sz + 1, sz - 2, sz - 2);
         context.fillStyle = 'rgba(255,255,255,0.18)';
-        context.fillRect(offX + c * sz + 1, offY + r * sz + 1, sz - 2, 4);
+        context.fillRect(offX + c * sz + 1, offY + r * sz + 1, sz - 2, 3);
       }
 }
 
@@ -524,11 +492,10 @@ function endGame() {
     localStorage.setItem('tetris-best', best);
     document.getElementById('best').textContent = best;
   }
-  const ov = document.getElementById('overlay');
   document.getElementById('overlay-title').innerHTML = 'GAME<br>OVER';
   document.getElementById('overlay-sub').textContent = `スコア: ${score}`;
   document.getElementById('start-btn').textContent = 'RETRY';
-  ov.style.display = 'flex';
+  document.getElementById('overlay').style.display = 'flex';
 }
 
 document.getElementById('start-btn').addEventListener('click', startGame);
@@ -550,12 +517,13 @@ document.addEventListener('keydown', e => {
       else lock();
       break;
     case 'ArrowUp':
-    case 'KeyX':
+    case 'KeyX': {
       const rot = rotate(piece.matrix);
       if (valid(rot, piece.x, piece.y)) piece.matrix = rot;
       else if (valid(rot, piece.x - 1, piece.y)) { piece.matrix = rot; piece.x--; }
       else if (valid(rot, piece.x + 1, piece.y)) { piece.matrix = rot; piece.x++; }
       break;
+    }
     case 'Space':
       piece.y = ghostY();
       lock();
@@ -581,7 +549,6 @@ document.addEventListener('keydown', e => {
   e.preventDefault();
 });
 
-// Mobile touch controls
 let touchStartX, touchStartY;
 board.addEventListener('touchstart', e => {
   touchStartX = e.touches[0].clientX;

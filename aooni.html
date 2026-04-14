@@ -6,298 +6,504 @@
 <title>青鬼 - 壁突破ゲーム</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;}
-body{background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;font-family:monospace;}
-#canvas{border:2px solid #333;display:block;image-rendering:pixelated;}
-#ui{color:#aaa;font-size:12px;margin-top:8px;text-align:center;line-height:1.9;}
-#cw{position:relative;display:inline-block;}
-#ov{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;z-index:10;min-width:240px;}
-#dpad{display:flex;flex-direction:column;align-items:center;gap:4px;margin-top:10px;}
-.drow{display:flex;gap:4px;}
-.dbtn{width:52px;height:52px;background:#1a1a2e;color:#8af;border:1px solid #334;border-radius:8px;font-size:22px;cursor:pointer;touch-action:none;-webkit-user-select:none;user-select:none;}
+body{background:#111;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;font-family:monospace;}
+#wrap{display:flex;flex-direction:column;align-items:center;gap:8px;}
+#canvas{border:3px solid #444;image-rendering:pixelated;display:block;}
+#hud{color:#ccc;font-size:13px;text-align:center;}
+#msg{color:#fa8;font-size:12px;min-height:18px;}
+#dpad{display:grid;grid-template-columns:52px 52px 52px;grid-template-rows:52px 52px;gap:4px;}
+.db{background:#1e1e30;color:#7af;border:1px solid #445;border-radius:8px;font-size:20px;
+    cursor:pointer;touch-action:none;-webkit-user-select:none;user-select:none;
+    display:flex;align-items:center;justify-content:center;}
+#ov{position:absolute;top:0;left:0;width:100%;height:100%;display:flex;align-items:center;justify-content:center;}
+#owrap{position:relative;}
 </style>
 </head>
 <body>
-<div id="cw">
-  <canvas id="canvas" width="480" height="480"></canvas>
-  <div id="ov"></div>
-</div>
-<div id="ui">
-  <span>WASD / 矢印キー</span>&nbsp;|&nbsp;
-  <span id="ic">🗝 所持: 0 &nbsp;💥 突破: 0/3</span>&nbsp;|&nbsp;
-  <span id="st">鍵を拾って ひびの壁を突破しろ！</span>
-</div>
-<div id="dpad">
-  <div class="drow"><button class="dbtn" id="up">▲</button></div>
-  <div class="drow">
-    <button class="dbtn" id="left">◀</button>
-    <button class="dbtn" id="down">▼</button>
-    <button class="dbtn" id="right">▶</button>
+<div id="wrap">
+  <div id="owrap">
+    <canvas id="canvas" width="480" height="480"></canvas>
+    <div id="ov"></div>
+  </div>
+  <div id="hud">🗝 所持: <span id="hk">0</span> &nbsp;|&nbsp; 💥 突破: <span id="hb">0</span>/3</div>
+  <div id="msg">鍵を拾って、ひびの壁に向かって進め！</div>
+  <div id="dpad">
+    <div></div>
+    <button class="db" id="btn-up">▲</button>
+    <div></div>
+    <button class="db" id="btn-left">◀</button>
+    <button class="db" id="btn-down">▼</button>
+    <button class="db" id="btn-right">▶</button>
   </div>
 </div>
 <script>
-const canvas=document.getElementById('canvas');
-const ctx=canvas.getContext('2d');
-const ov=document.getElementById('ov');
-const icEl=document.getElementById('ic');
-const stEl=document.getElementById('st');
-const T=32,C=15,R=15;
-// Tile: 0=wall 1=floor 2=breakable_wall
-let map,keyItems,breakWalls,player,oni;
-let pKeys,state,mT,oT,sT,gT;
-let heldKeys,brokenCount;
-let oMode,oPDir,aFlash,gRes,bFx;
+'use strict';
+const canvas = document.getElementById('canvas');
+const ctx    = canvas.getContext('2d');
+const ov     = document.getElementById('ov');
+const hkEl   = document.getElementById('hk');
+const hbEl   = document.getElementById('hb');
+const msgEl  = document.getElementById('msg');
 
-function generateMaze(){
-  const g=Array.from({length:R},()=>new Array(C).fill(0));
-  function carve(r,c){
-    g[r][c]=1;
-    const dirs=[[0,2],[0,-2],[2,0],[-2,0]].sort(()=>Math.random()-.5);
-    for(const[dr,dc]of dirs){
-      const nr=r+dr,nc=c+dc;
-      if(nr>=1&&nr<=R-2&&nc>=1&&nc<=C-2&&g[nr][nc]===0){g[r+dr/2][c+dc/2]=1;carve(nr,nc);}
-    }
-  }
-  carve(1,1);
-  for(let pass=0;pass<3;pass++)
-    for(let r=1;r<R-1;r++)for(let c=1;c<C-1;c++){
-      if(g[r][c]===0&&Math.random()<0.28){
-        const adj=[[r-1,c],[r+1,c],[r,c-1],[r,c+1]].filter(([nr,nc])=>nr>=0&&nr<R&&nc>=0&&nc<C&&g[nr][nc]===1).length;
-        if(adj>=2)g[r][c]=1;
+const TW = 32, COLS = 15, ROWS = 15;
+// タイル定数
+const WALL = 0, FLOOR = 1, CRACK = 2;
+
+let G, keyItems, crackWalls, player, oni;
+let held, broken, graceTime, playerMT, oniMT;
+let oniMode, oniDir, alertT, shakeT, gameState;
+let bfx = []; // 爆発エフェクト
+const keys = new Set();
+
+// ==== 迷路生成（再帰バックトラック）====
+function makeMaze() {
+  const g = [];
+  for (let r = 0; r < ROWS; r++) { g[r] = []; for (let c = 0; c < COLS; c++) g[r][c] = WALL; }
+  function carve(r, c) {
+    g[r][c] = FLOOR;
+    const d = [[0,2],[0,-2],[2,0],[-2,0]].sort(() => Math.random()-0.5);
+    for (const [dr,dc] of d) {
+      const nr = r+dr, nc = c+dc;
+      if (nr>0 && nr<ROWS-1 && nc>0 && nc<COLS-1 && g[nr][nc]===WALL) {
+        g[r+dr/2][c+dc/2] = FLOOR;
+        carve(nr, nc);
       }
     }
-  return g;
-}
-
-function findBreakableSpots(){
-  const spots=[];
-  for(let r=2;r<R-2;r++)for(let c=2;c<C-2;c++){
-    if(map[r][c]!==0)continue;
-    const hOk=map[r][c-1]===1&&map[r][c+1]===1;
-    const vOk=map[r-1][c]===1&&map[r+1][c]===1;
-    if((hOk||vOk)&&Math.abs(r-1)+Math.abs(c-1)>=5)spots.push({r,c,sc:Math.random()});
   }
-  spots.sort((a,b)=>b.sc-a.sc);
-  const ch=[];
-  for(const s of spots){
-    if(ch.every(x=>Math.abs(x.r-s.r)+Math.abs(x.c-s.c)>=7)){ch.push(s);if(ch.length===3)break;}
-  }
-  return ch;
-}
-
-const D4=[[0,1],[0,-1],[1,0],[-1,0]];
-function walkable(r,c){return r>=0&&r<R&&c>=0&&c<C&&map[r][c]===1;}
-function bfsPath(fr,fc,tr,tc){
-  const vis=Array.from({length:R},()=>new Array(C).fill(false));
-  const par=Array.from({length:R},()=>new Array(C).fill(null));
-  const q=[[fr,fc]];vis[fr][fc]=true;
-  while(q.length){
-    const[r,c]=q.shift();
-    if(r===tr&&c===tc){let p=[[r,c]],cu=[r,c];while(par[cu[0]][cu[1]]){cu=par[cu[0]][cu[1]];p.unshift(cu);}return p;}
-    for(const[dr,dc]of D4){const nr=r+dr,nc=c+dc;if(nr<0||nr>=R||nc<0||nc>=C||vis[nr][nc]||!walkable(nr,nc))continue;vis[nr][nc]=true;par[nr][nc]=[r,c];q.push([nr,nc]);}
-  }return[];
-}
-function bfsReach(sr,sc){
-  const vis=Array.from({length:R},()=>new Array(C).fill(false));
-  const q=[[sr,sc]],cells=[];vis[sr][sc]=true;
-  while(q.length){const[r,c]=q.shift();cells.push([r,c]);
-    for(const[dr,dc]of D4){const nr=r+dr,nc=c+dc;if(nr<0||nr>=R||nc<0||nc>=C||vis[nr][nc]||!walkable(nr,nc))continue;vis[nr][nc]=true;q.push([nr,nc]);}}
-  return cells;
-}
-function hasLOS(ar,ac,br,bc){
-  const dx=bc-ac,dy=br-ar,d=Math.sqrt(dx*dx+dy*dy);
-  if(d>7)return false;
-  const s=Math.ceil(d*2);
-  for(let i=1;i<s;i++){const gr=Math.round(ar+dy*(i/s)),gc=Math.round(ac+dx*(i/s));if(gr===br&&gc===bc)break;if(!walkable(gr,gc))return false;}
-  return true;
-}
-function oniPatrol(){
-  const sh=[...D4].sort(()=>Math.random()-.5);
-  if(oPDir)sh.sort((a,b)=>a[0]===oPDir[0]&&a[1]===oPDir[1]?-1:b[0]===oPDir[0]&&b[1]===oPDir[1]?1:0);
-  for(const[dr,dc]of sh){const nr=oni.r+dr,nc=oni.c+dc;if(!walkable(nr,nc))continue;oPDir=[dr,dc];oni.r=nr;oni.c=nc;oni.x=nc*T;oni.y=nr*T;return;}
-  oPDir=null;
-}
-function updateUI(){icEl.textContent=`🗝 所持: ${heldKeys}  💥 突破: ${brokenCount}/3`;}
-
-function initGame(){
-  pKeys=new Set();map=generateMaze();
-  const bwSpots=findBreakableSpots();
-  bwSpots.forEach(s=>{map[s.r][s.c]=2;});
-  breakWalls=bwSpots.map(s=>({r:s.r,c:s.c,broken:false}));
-  player={r:1,c:1,x:T,y:T};
-  const acc=bfsReach(1,1);
-  const oc=acc.reduce((b,e)=>Math.abs(e[0]-1)+Math.abs(e[1]-1)>Math.abs(b[0]-1)+Math.abs(b[1]-1)?e:b,acc[0]);
-  oni={r:oc[0],c:oc[1],x:oc[1]*T,y:oc[0]*T};
-  const pool=acc.filter(([r,c])=>map[r][c]===1&&!(r===1&&c===1)&&!(r===oc[0]&&c===oc[1])).sort(()=>Math.random()-.5);
-  keyItems=[];
-  for(const cell of pool){
-    if(keyItems.every(k=>Math.abs(k.r-cell[0])+Math.abs(k.c-cell[1])>=5)){keyItems.push({r:cell[0],c:cell[1],collected:false});if(keyItems.length===3)break;}
-  }
-  heldKeys=0;brokenCount=0;mT=0;oT=0;sT=0;gT=3.0;
-  state='playing';oMode='patrol';oPDir=null;aFlash=0;gRes='';bFx=[];
-  ov.innerHTML='';updateUI();stEl.textContent='🗝 鍵を拾って、ひびの壁に向かって進め！';
-}
-
-function breakWall(r,c){
-  const bw=breakWalls.find(w=>w.r===r&&w.c===c&&!w.broken);
-  if(!bw||heldKeys<=0)return;
-  bw.broken=true;map[r][c]=1;heldKeys--;brokenCount++;
-  bFx.push({r,c,t:1.0});updateUI();
-  if(brokenCount>=3){state='win';gRes='win';showResult();}
-  else stEl.textContent=`💥 壁を突破！(${brokenCount}/3) あと${3-brokenCount}か所！`;
-}
-
-function drawTile(r,c){
-  const x=c*T,y=r*T,t=map[r][c];
-  if(t===1){
-    ctx.fillStyle='#16213e';ctx.fillRect(x,y,T,T);
-    if((r+c)%2===0){ctx.fillStyle='rgba(255,255,255,0.012)';ctx.fillRect(x,y,T,T);}
-  }else if(t===0){
-    ctx.fillStyle='#0a0a14';ctx.fillRect(x,y,T,T);
-    ctx.fillStyle='#141428';ctx.fillRect(x+1,y+1,T-2,T-2);
-  }else if(t===2){
-    ctx.fillStyle='#1a1030';ctx.fillRect(x,y,T,T);
-    ctx.fillStyle='#251845';ctx.fillRect(x+1,y+1,T-2,T-2);
-    // ひびの線
-    ctx.strokeStyle='rgba(255,160,40,0.6)';ctx.lineWidth=1.2;
-    ctx.beginPath();ctx.moveTo(x+T/2,y+2);ctx.lineTo(x+T/2-4,y+T/2);ctx.lineTo(x+T/2+2,y+T-4);ctx.stroke();
-    ctx.beginPath();ctx.moveTo(x+T/2-4,y+T/2);ctx.lineTo(x+4,y+T*0.7);ctx.stroke();
-    ctx.beginPath();ctx.moveTo(x+T/2+2,y+T/2-4);ctx.lineTo(x+T-6,y+T*0.35);ctx.stroke();
-    const gp=0.15+0.1*Math.sin(Date.now()/380);
-    ctx.fillStyle=`rgba(255,140,20,${gp})`;ctx.fillRect(x,y,T,T);
-    if(heldKeys>0){ctx.fillStyle='rgba(255,220,80,0.85)';ctx.font='bold 7px monospace';ctx.textAlign='center';ctx.fillText('BREAK',x+T/2,y+T/2+3);}
-  }
-}
-function drawBreakFx(){
-  bFx=bFx.filter(e=>e.t>0);
-  bFx.forEach(e=>{
-    e.t-=0.025;const a=e.t,x=e.c*T,y=e.r*T,cx=x+T/2,cy=y+T/2;
-    ctx.strokeStyle=`rgba(255,220,80,${a})`;ctx.lineWidth=2;
-    ctx.beginPath();ctx.arc(cx,cy,(1-a)*T*2,0,Math.PI*2);ctx.stroke();
-    ctx.fillStyle=`rgba(255,200,60,${a*0.6})`;ctx.fillRect(x,y,T,T);
-    for(let i=0;i<8;i++){
-      const ang=(i/8)*Math.PI*2,dist=(1-a)*T*2;
-      ctx.fillStyle=`rgba(255,180,40,${a*0.8})`;
-      ctx.fillRect(cx+Math.cos(ang)*dist-2,cy+Math.sin(ang)*dist-2,4,4);
-    }
-  });
-}
-function drawPlayer(){
-  const x=player.x+T/2,y=player.y+T/2;
-  ctx.fillStyle='#b08850';ctx.fillRect(x-7,y-10,14,18);
-  ctx.fillStyle='#e8c97e';ctx.beginPath();ctx.arc(x,y-13,8,0,Math.PI*2);ctx.fill();
-  ctx.fillStyle='#222';ctx.fillRect(x-4,y-14,3,3);ctx.fillRect(x+1,y-14,3,3);
-  ctx.fillStyle='#664';ctx.fillRect(x-3,y-10,6,1);
-  if(heldKeys>0){ctx.fillStyle='rgba(255,215,0,0.95)';ctx.font='bold 11px monospace';ctx.textAlign='center';ctx.fillText('🗝'+heldKeys,x,y-24);}
-}
-function drawOni(gl){
-  const x=oni.x+T/2,y=oni.y+T/2,bob=Math.sin(Date.now()/200)*2;
-  if(oMode==='chase'){const p=0.12+0.1*Math.sin(Date.now()/90);ctx.fillStyle=`rgba(255,40,40,${p})`;ctx.beginPath();ctx.arc(x,y+bob,22,0,Math.PI*2);ctx.fill();}
-  ctx.globalAlpha=gl>0?0.4+0.25*Math.sin(Date.now()/300):1;
-  ctx.fillStyle='#1a2e88';ctx.beginPath();ctx.ellipse(x,y+bob+2,11,14,0,0,Math.PI*2);ctx.fill();
-  ctx.fillStyle=oMode==='chase'?'#66aaff':'#4488ff';ctx.beginPath();ctx.ellipse(x,y+bob,10,12,0,0,Math.PI*2);ctx.fill();
-  ctx.fillStyle='#fff';ctx.fillRect(x-5,y+bob-5,4,4);ctx.fillRect(x+1,y+bob-5,4,4);
-  ctx.fillStyle=oMode==='chase'?'#ff2222':'rgba(0,0,0,0.9)';ctx.fillRect(x-4,y+bob-4,2,2);ctx.fillRect(x+2,y+bob-4,2,2);
-  ctx.fillStyle='#2233aa';
-  ctx.beginPath();ctx.moveTo(x-6,y+bob-9);ctx.lineTo(x-9,y+bob-17);ctx.lineTo(x-2,y+bob-10);ctx.closePath();ctx.fill();
-  ctx.beginPath();ctx.moveTo(x+6,y+bob-9);ctx.lineTo(x+9,y+bob-17);ctx.lineTo(x+2,y+bob-10);ctx.closePath();ctx.fill();
-  ctx.globalAlpha=1;
-  if(gl>0){ctx.fillStyle='rgba(120,160,255,0.85)';ctx.font='bold 10px monospace';ctx.textAlign='center';ctx.fillText(Math.ceil(gl)+'秒後に動く',x,y+bob-22);}
-  if(oMode==='chase'&&aFlash>0.4){ctx.fillStyle=`rgba(255,80,0,${aFlash})`;ctx.font='bold 13px monospace';ctx.textAlign='center';ctx.fillText('！！！',x,y+bob-26);}
-}
-function drawKeys(){
-  keyItems.forEach((k,i)=>{
-    if(k.collected)return;
-    const x=k.c*T+T/2,y=k.r*T+T/2,bob=Math.sin(Date.now()/420+i*1.5)*3;
-    ctx.fillStyle='rgba(255,215,0,0.2)';ctx.beginPath();ctx.arc(x,y+bob,13,0,Math.PI*2);ctx.fill();
-    ctx.strokeStyle='#a07000';ctx.lineWidth=2;ctx.beginPath();ctx.arc(x,y+bob-4,5,0,Math.PI*2);ctx.stroke();
-    ctx.fillStyle='#ffd700';ctx.beginPath();ctx.arc(x,y+bob-4,4,0,Math.PI*2);ctx.fill();
-    ctx.fillRect(x-1,y+bob+1,2,8);ctx.fillRect(x+1,y+bob+3,3,2);ctx.fillRect(x+1,y+bob+6,3,2);
-  });
-}
-function drawFog(){
-  const px=player.x+T/2,py=player.y+T/2;
-  const grd=ctx.createRadialGradient(px,py,55,px,py,230);
-  grd.addColorStop(0,'rgba(0,0,0,0)');grd.addColorStop(0.5,'rgba(0,0,5,0.2)');grd.addColorStop(1,'rgba(0,0,5,0.96)');
-  ctx.fillStyle=grd;ctx.fillRect(0,0,480,480);
-}
-function showResult(){
-  if(gRes==='win'){
-    ov.innerHTML=`<div style="background:rgba(0,20,0,0.93);border:1px solid #3a6;padding:22px 32px;border-radius:8px;color:#7fa">
-<div style="font-size:22px;font-weight:bold;margin-bottom:8px;">🎉 全壁突破！脱出成功！</div>
-<div style="font-size:13px;color:#5a8;margin-bottom:14px;">3か所のひびの壁を打ち破った！</div>
-<button onclick="initGame()" style="background:#1a4a2a;color:#7fa;border:1px solid #3a6;padding:8px 20px;cursor:pointer;font-family:monospace;font-size:13px;border-radius:4px;">もう一度（新迷路）</button>
-</div>`;
-  }else{
-    ov.innerHTML=`<div style="background:rgba(20,0,0,0.93);border:1px solid #a33;padding:22px 32px;border-radius:8px;color:#f88">
-<div style="font-size:22px;font-weight:bold;margin-bottom:8px;">💀 捕まった…</div>
-<div style="font-size:13px;color:#a66;margin-bottom:14px;">💥 ${brokenCount}/3 突破</div>
-<button onclick="initGame()" style="background:#3a0a0a;color:#f88;border:1px solid #a33;padding:8px 20px;cursor:pointer;font-family:monospace;font-size:13px;border-radius:4px;">もう一度</button>
-</div>`;
-  }
-}
-
-let last=null;
-function loop(ts){
-  if(!last)last=ts;const dt=Math.min((ts-last)/1000,0.1);last=ts;
-  if(state==='playing'){
-    if(gT>0){gT=Math.max(0,gT-dt);if(gT>0)stEl.textContent=`青鬼が動き出すまで ${Math.ceil(gT)} 秒！`;}
-    let dx=0,dy=0;
-    if(pKeys.has('ArrowLeft')||pKeys.has('a')||pKeys.has('A'))dx=-1;
-    if(pKeys.has('ArrowRight')||pKeys.has('d')||pKeys.has('D'))dx=1;
-    if(pKeys.has('ArrowUp')||pKeys.has('w')||pKeys.has('W'))dy=-1;
-    if(pKeys.has('ArrowDown')||pKeys.has('s')||pKeys.has('S'))dy=1;
-    mT+=dt;
-    if(mT>=0.1&&(dx||dy)){
-      mT=0;const nr=player.r+dy,nc=player.c+dx;
-      if(nr>=0&&nr<R&&nc>=0&&nc<C){
-        if(map[nr][nc]===1){player.r=nr;player.c=nc;player.x=nc*T;player.y=nr*T;}
-        else if(map[nr][nc]===2&&heldKeys>0){
-          breakWall(nr,nc);
-          if(state==='win'){requestAnimationFrame(loop);return;}
-          player.r=nr;player.c=nc;player.x=nc*T;player.y=nr*T;
+  carve(1, 1);
+  // ループ追加（袋小路を減らす）
+  for (let p = 0; p < 4; p++) {
+    for (let r = 1; r < ROWS-1; r++) {
+      for (let c = 1; c < COLS-1; c++) {
+        if (g[r][c] === WALL && Math.random() < 0.25) {
+          let adj = 0;
+          if (r>0 && g[r-1][c]===FLOOR) adj++;
+          if (r<ROWS-1 && g[r+1][c]===FLOOR) adj++;
+          if (c>0 && g[r][c-1]===FLOOR) adj++;
+          if (c<COLS-1 && g[r][c+1]===FLOOR) adj++;
+          if (adj >= 2) g[r][c] = FLOOR;
         }
       }
     }
-    keyItems.forEach(k=>{
-      if(!k.collected&&k.r===player.r&&k.c===player.c){
-        k.collected=true;heldKeys++;updateUI();
-        stEl.textContent=`🗝 鍵を入手！(所持:${heldKeys})  ひびの壁に向かって進め！`;
-      }
-    });
-    if(gT<=0){
-      const see=hasLOS(oni.r,oni.c,player.r,player.c);
-      if(see){if(oMode==='patrol')aFlash=1.0;oMode='chase';if(aFlash>0.9)stEl.textContent='👁 見つかった！逃げろ！';}
-      else if(oMode==='chase'&&Math.abs(oni.r-player.r)+Math.abs(oni.c-player.c)>4)oMode='patrol';
-      if(aFlash>0)aFlash=Math.max(0,aFlash-dt*1.5);
-      oT+=dt;const delay=oMode==='chase'?Math.max(0.28,0.35-brokenCount*0.02):0.72;
-      if(oT>=delay){oT=0;
-        if(oMode==='chase'){const p=bfsPath(oni.r,oni.c,player.r,player.c);if(p.length>1){oni.r=p[1][0];oni.c=p[1][1];oni.x=oni.c*T;oni.y=oni.r*T;}}
-        else oniPatrol();
+  }
+  return g;
+}
+
+// ==== ひびの壁候補を探す ====
+function findCracks() {
+  const cands = [];
+  for (let r = 2; r < ROWS-2; r++) {
+    for (let c = 2; c < COLS-2; c++) {
+      if (G[r][c] !== WALL) continue;
+      if (Math.abs(r-1)+Math.abs(c-1) < 4) continue; // スタート付近を除外
+      const h = G[r][c-1]===FLOOR && G[r][c+1]===FLOOR;
+      const v = G[r-1][c]===FLOOR && G[r+1][c]===FLOOR;
+      if (h || v) cands.push([r, c]);
+    }
+  }
+  // シャッフル後、間隔を保って3個選ぶ
+  cands.sort(() => Math.random()-0.5);
+  const sel = [];
+  for (const [r,c] of cands) {
+    if (sel.every(([sr,sc]) => Math.abs(sr-r)+Math.abs(sc-c) >= 6)) {
+      sel.push([r, c]);
+      if (sel.length === 3) break;
+    }
+  }
+  // 万が一3個見つからない場合のフォールバック
+  for (const [r,c] of cands) {
+    if (sel.length >= 3) break;
+    if (!sel.some(([sr,sc]) => sr===r && sc===c)) sel.push([r,c]);
+  }
+  return sel;
+}
+
+// ==== BFS ====
+const DIR4 = [[0,1],[0,-1],[1,0],[-1,0]];
+function isWalkable(r, c) {
+  return r>=0 && r<ROWS && c>=0 && c<COLS && G[r][c]===FLOOR;
+}
+function bfsReach(sr, sc) {
+  const visited = [];
+  for (let r=0;r<ROWS;r++) { visited[r]=[]; for(let c=0;c<COLS;c++) visited[r][c]=false; }
+  const q = [[sr,sc]], result = [];
+  visited[sr][sc] = true;
+  while (q.length) {
+    const [r,c] = q.shift();
+    result.push([r,c]);
+    for (const [dr,dc] of DIR4) {
+      const nr=r+dr, nc=c+dc;
+      if (!visited[nr]?.[nc] && isWalkable(nr,nc)) { visited[nr][nc]=true; q.push([nr,nc]); }
+    }
+  }
+  return result;
+}
+function bfsPath(fr, fc, tr, tc) {
+  const vis = [], par = [];
+  for (let r=0;r<ROWS;r++) { vis[r]=[]; par[r]=[]; for(let c=0;c<COLS;c++){vis[r][c]=false;par[r][c]=null;} }
+  const q = [[fr,fc]]; vis[fr][fc]=true;
+  while (q.length) {
+    const [r,c] = q.shift();
+    if (r===tr && c===tc) {
+      const path=[[r,c]]; let cur=[r,c];
+      while (par[cur[0]][cur[1]]) { cur=par[cur[0]][cur[1]]; path.unshift(cur); }
+      return path;
+    }
+    for (const [dr,dc] of DIR4) {
+      const nr=r+dr, nc=c+dc;
+      if (nr>=0&&nr<ROWS&&nc>=0&&nc<COLS&&!vis[nr][nc]&&isWalkable(nr,nc)) {
+        vis[nr][nc]=true; par[nr][nc]=[r,c]; q.push([nr,nc]);
       }
     }
-    if(oni.r===player.r&&oni.c===player.c){state='dead';gRes='dead';sT=0.6;showResult();}
-    if(sT>0)sT-=dt;
   }
-  ctx.fillStyle='#000';ctx.fillRect(0,0,480,480);
-  const sx=gRes==='dead'&&sT>0?(Math.random()-.5)*10:0,sy=gRes==='dead'&&sT>0?(Math.random()-.5)*10:0;
-  ctx.save();ctx.translate(sx,sy);
-  for(let r=0;r<R;r++)for(let c=0;c<C;c++)drawTile(r,c);
-  drawKeys();drawBreakFx();drawPlayer();drawOni(gT);drawFog();
-  if(aFlash>0){ctx.fillStyle=`rgba(255,60,0,${aFlash*0.13})`;ctx.fillRect(0,0,480,480);}
-  ctx.restore();
-  if(gRes==='dead'&&sT<=0){ctx.fillStyle='rgba(80,0,0,0.5)';ctx.fillRect(0,0,480,480);}
+  return [];
+}
+
+// ==== 視線判定 ====
+function hasLOS(ar,ac,br,bc) {
+  const dx=bc-ac, dy=br-ar, d=Math.sqrt(dx*dx+dy*dy);
+  if (d>8) return false;
+  const steps = Math.ceil(d*2);
+  for (let i=1; i<steps; i++) {
+    const gr=Math.round(ar+dy*i/steps), gc=Math.round(ac+dx*i/steps);
+    if (gr===br && gc===bc) break;
+    if (!isWalkable(gr,gc)) return false;
+  }
+  return true;
+}
+
+// ==== 鬼のパトロール ====
+function oniPatrol() {
+  const dirs = [...DIR4].sort(() => Math.random()-0.5);
+  if (oniDir) dirs.sort((a,b) => (a[0]===oniDir[0]&&a[1]===oniDir[1])?-1:(b[0]===oniDir[0]&&b[1]===oniDir[1])?1:0);
+  for (const [dr,dc] of dirs) {
+    const nr=oni.r+dr, nc=oni.c+dc;
+    if (isWalkable(nr,nc)) { oniDir=[dr,dc]; oni.r=nr; oni.c=nc; return; }
+  }
+  oniDir=null;
+}
+
+// ==== ゲーム初期化 ====
+function initGame() {
+  G = makeMaze();
+  const cracks = findCracks();
+  crackWalls = cracks.map(([r,c]) => ({r,c,broken:false}));
+  cracks.forEach(([r,c]) => { G[r][c] = CRACK; });
+
+  player = {r:1, c:1};
+  
+  // 鬼：プレイヤーから最も遠い到達可能セル
+  const reachable = bfsReach(1,1);
+  const oc = reachable.reduce((best,cell) =>
+    Math.abs(cell[0]-1)+Math.abs(cell[1]-1) > Math.abs(best[0]-1)+Math.abs(best[1]-1) ? cell : best,
+    reachable[0]
+  );
+  oni = {r:oc[0], c:oc[1]};
+
+  // 鍵：到達可能セルからランダムに3個（間隔を確保）
+  const pool = reachable
+    .filter(([r,c]) => G[r][c]===FLOOR && !(r===1&&c===1) && !(r===oni.r&&c===oni.c))
+    .sort(() => Math.random()-0.5);
+  keyItems = [];
+  for (const [r,c] of pool) {
+    if (keyItems.every(k => Math.abs(k.r-r)+Math.abs(k.c-c)>=5)) {
+      keyItems.push({r,c,got:false});
+      if (keyItems.length===3) break;
+    }
+  }
+  // フォールバック
+  for (const [r,c] of pool) {
+    if (keyItems.length>=3) break;
+    if (!keyItems.some(k=>k.r===r&&k.c===c)) keyItems.push({r,c,got:false});
+  }
+
+  held=0; broken=0; graceTime=3.0;
+  playerMT=0; oniMT=0; alertT=0; shakeT=0;
+  oniMode='patrol'; oniDir=null; gameState='play'; bfx=[];
+  prevTime=null; ov.innerHTML=''; hkEl.textContent='0'; hbEl.textContent='0';
+  msgEl.textContent='鍵を拾って、ひびの壁に向かって進め！';
+}
+
+// ==== 壁突破 ====
+function breakCrack(r,c) {
+  const w=crackWalls.find(w=>w.r===r&&w.c===c&&!w.broken);
+  if (!w || held<=0) return false;
+  w.broken=true; G[r][c]=FLOOR; held--; broken++;
+  bfx.push({r,c,t:1.0});
+  hkEl.textContent=held; hbEl.textContent=broken;
+  if (broken>=3) { gameState='win'; showResult(); }
+  else msgEl.textContent=`💥 壁を突破！(${broken}/3)　あと${3-broken}か所！`;
+  return true;
+}
+
+// ==== 描画 ====
+function drawMap(t) {
+  for (let r=0;r<ROWS;r++) {
+    for (let c=0;c<COLS;c++) {
+      const x=c*TW, y=r*TW, tile=G[r][c];
+      if (tile===FLOOR) {
+        ctx.fillStyle='#16213e'; ctx.fillRect(x,y,TW,TW);
+        if ((r+c)%2===0) { ctx.fillStyle='rgba(255,255,255,0.013)'; ctx.fillRect(x,y,TW,TW); }
+      } else if (tile===WALL) {
+        ctx.fillStyle='#090914'; ctx.fillRect(x,y,TW,TW);
+        ctx.fillStyle='#111124'; ctx.fillRect(x+1,y+1,TW-2,TW-2);
+      } else if (tile===CRACK) {
+        // ひびの壁
+        ctx.fillStyle='#1a1030'; ctx.fillRect(x,y,TW,TW);
+        ctx.fillStyle='#201540'; ctx.fillRect(x+1,y+1,TW-2,TW-2);
+        // ひびの模様
+        const glow = 0.4+0.25*Math.sin(t*6);
+        ctx.strokeStyle=`rgba(255,140,30,${glow})`; ctx.lineWidth=1.5;
+        ctx.beginPath();
+        ctx.moveTo(x+TW/2, y+3);
+        ctx.lineTo(x+TW/2-5, y+TW/2);
+        ctx.lineTo(x+TW/2+3, y+TW-4);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(x+TW/2-5, y+TW/2);
+        ctx.lineTo(x+5, y+TW*0.65);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(x+TW/2+3, y+TW/2-3);
+        ctx.lineTo(x+TW-5, y+TW*0.35);
+        ctx.stroke();
+        // 鍵所持時にBREAKラベル
+        if (held>0) {
+          ctx.fillStyle='rgba(255,230,60,0.9)';
+          ctx.font='bold 7px monospace';
+          ctx.textAlign='center'; ctx.textBaseline='middle';
+          ctx.fillText('BREAK', x+TW/2, y+TW/2);
+          ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+        }
+      }
+    }
+  }
+}
+
+function drawKeys(t) {
+  for (const k of keyItems) {
+    if (k.got) continue;
+    const x=k.c*TW+TW/2, y=k.r*TW+TW/2;
+    const bob = Math.sin(t*2.5)*3;
+    // グロー
+    ctx.fillStyle='rgba(255,215,0,0.18)';
+    ctx.beginPath(); ctx.arc(x,y+bob,14,0,Math.PI*2); ctx.fill();
+    // 鍵の輪
+    ctx.fillStyle='#ffd700';
+    ctx.beginPath(); ctx.arc(x,y+bob-5,5,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='#0a0a14';
+    ctx.beginPath(); ctx.arc(x,y+bob-5,2.5,0,Math.PI*2); ctx.fill();
+    // 鍵の柄
+    ctx.fillStyle='#ffd700';
+    ctx.fillRect(x-1.5,y+bob,3,9);
+    ctx.fillRect(x+0.5,y+bob+3,4,2);
+    ctx.fillRect(x+0.5,y+bob+6,4,2);
+  }
+}
+
+function drawBfx() {
+  bfx = bfx.filter(e=>e.t>0);
+  for (const e of bfx) {
+    e.t -= 0.03;
+    const a=e.t, cx=e.c*TW+TW/2, cy=e.r*TW+TW/2;
+    // 拡張リング
+    ctx.strokeStyle=`rgba(255,220,80,${a})`;
+    ctx.lineWidth=3;
+    ctx.beginPath(); ctx.arc(cx,cy,(1-a)*TW*2.5,0,Math.PI*2); ctx.stroke();
+    // 光
+    ctx.fillStyle=`rgba(255,200,60,${a*0.5})`;
+    ctx.fillRect(e.c*TW,e.r*TW,TW,TW);
+    // 破片
+    for (let i=0;i<6;i++) {
+      const ang=i/6*Math.PI*2, r2=(1-a)*TW*2.2;
+      ctx.fillStyle=`rgba(255,180,30,${a*0.9})`;
+      ctx.fillRect(cx+Math.cos(ang)*r2-3,cy+Math.sin(ang)*r2-3,6,6);
+    }
+  }
+}
+
+function drawPlayer() {
+  const x=player.c*TW+TW/2, y=player.r*TW+TW/2;
+  // 体
+  ctx.fillStyle='#c09060'; ctx.fillRect(x-7,y-8,14,16);
+  // 頭
+  ctx.fillStyle='#e8c97e'; ctx.beginPath(); ctx.arc(x,y-14,9,0,Math.PI*2); ctx.fill();
+  // 目
+  ctx.fillStyle='#333'; ctx.fillRect(x-4,y-16,3,3); ctx.fillRect(x+1,y-16,3,3);
+  // 鍵所持表示
+  if (held>0) {
+    ctx.fillStyle='rgba(255,220,50,0.95)';
+    ctx.font='bold 12px monospace';
+    ctx.textAlign='center'; ctx.textBaseline='alphabetic';
+    ctx.fillText(`🗝${held}`, x, y-26);
+    ctx.textAlign='left';
+  }
+}
+
+function drawOni(t, grace) {
+  const x=oni.c*TW+TW/2, y=oni.r*TW+TW/2;
+  const bob=Math.sin(t*3)*2.5;
+  // 追跡中の赤オーラ
+  if (oniMode==='chase') {
+    const a=0.1+0.08*Math.sin(t*8);
+    ctx.fillStyle=`rgba(255,40,40,${a})`;
+    ctx.beginPath(); ctx.arc(x,y+bob,24,0,Math.PI*2); ctx.fill();
+  }
+  // 猶予中は半透明
+  ctx.globalAlpha = grace>0 ? 0.35+0.2*Math.sin(t*4) : 1;
+  // 胴体
+  ctx.fillStyle='#1a2e90';
+  ctx.beginPath(); ctx.ellipse(x,y+bob,11,14,0,0,Math.PI*2); ctx.fill();
+  // 顔
+  ctx.fillStyle=oniMode==='chase'?'#7ab0ff':'#4d88ff';
+  ctx.beginPath(); ctx.ellipse(x,y+bob-2,10,12,0,0,Math.PI*2); ctx.fill();
+  // 目
+  ctx.fillStyle='#fff';
+  ctx.fillRect(x-5,y+bob-7,4,4); ctx.fillRect(x+1,y+bob-7,4,4);
+  ctx.fillStyle=oniMode==='chase'?'#ff2020':'#000';
+  ctx.fillRect(x-4,y+bob-6,2,2); ctx.fillRect(x+2,y+bob-6,2,2);
+  // 角
+  ctx.fillStyle='#223399';
+  ctx.beginPath(); ctx.moveTo(x-5,y+bob-10); ctx.lineTo(x-8,y+bob-20); ctx.lineTo(x-1,y+bob-11); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(x+5,y+bob-10); ctx.lineTo(x+8,y+bob-20); ctx.lineTo(x+1,y+bob-11); ctx.closePath(); ctx.fill();
+  ctx.globalAlpha=1;
+  // 猶予中テキスト
+  if (grace>0) {
+    ctx.fillStyle='rgba(150,190,255,0.9)';
+    ctx.font='bold 10px monospace'; ctx.textAlign='center'; ctx.textBaseline='alphabetic';
+    ctx.fillText(Math.ceil(grace)+'秒後に動く', x, y+bob-26);
+    ctx.textAlign='left';
+  }
+  // 発見！
+  if (alertT>0.5 && oniMode==='chase') {
+    ctx.fillStyle=`rgba(255,80,0,${alertT})`;
+    ctx.font='bold 14px monospace'; ctx.textAlign='center'; ctx.textBaseline='alphabetic';
+    ctx.fillText('！！！', x, y+bob-28);
+    ctx.textAlign='left';
+  }
+}
+
+function drawFog() {
+  const px=player.c*TW+TW/2, py=player.r*TW+TW/2;
+  const g=ctx.createRadialGradient(px,py,TW*1.5,px,py,TW*6);
+  g.addColorStop(0,'rgba(0,0,0,0)');
+  g.addColorStop(0.6,'rgba(0,0,10,0.3)');
+  g.addColorStop(1,'rgba(0,0,10,0.92)');
+  ctx.fillStyle=g; ctx.fillRect(0,0,480,480);
+}
+
+function showResult() {
+  const win = gameState==='win';
+  ov.innerHTML=`<div style="background:rgba(0,0,0,0.88);border:2px solid ${win?'#3a6':'#a33'};padding:24px 32px;border-radius:10px;color:${win?'#8fd':'#f88'}">
+<div style="font-size:24px;font-weight:bold;margin-bottom:8px;">${win?'🎉 全壁突破！脱出成功！':'💀 捕まった…'}</div>
+<div style="font-size:13px;margin-bottom:16px;">${win?'3か所のひびの壁を打ち破った！':'💥 '+broken+'/3 突破'}</div>
+<button onclick="initGame()" style="background:${win?'#1a4a2a':'#3a0a0a'};color:${win?'#8fd':'#f88'};border:1px solid ${win?'#3a6':'#a33'};padding:10px 24px;cursor:pointer;font-family:monospace;font-size:14px;border-radius:6px;">もう一度</button>
+</div>`;
+}
+
+// ==== ゲームループ ====
+let prevTime=null;
+function loop(now) {
   requestAnimationFrame(loop);
+  if (!prevTime) { prevTime=now; return; }
+  const dt = Math.min((now-prevTime)/1000, 0.12);
+  prevTime=now;
+  const t=now/1000;
+
+  if (gameState==='play') {
+    // 猶予タイマー
+    if (graceTime>0) { graceTime=Math.max(0,graceTime-dt); if(graceTime>0) msgEl.textContent=`青鬼が動き出すまで ${Math.ceil(graceTime)} 秒！`; }
+
+    // プレイヤー移動
+    let dr=0, dc=0;
+    if (keys.has('ArrowUp')||keys.has('w')||keys.has('W'))    dr=-1;
+    if (keys.has('ArrowDown')||keys.has('s')||keys.has('S'))  dr= 1;
+    if (keys.has('ArrowLeft')||keys.has('a')||keys.has('A'))  dc=-1;
+    if (keys.has('ArrowRight')||keys.has('d')||keys.has('D')) dc= 1;
+    playerMT+=dt;
+    if (playerMT>=0.11 && (dr||dc)) {
+      playerMT=0;
+      const nr=player.r+dr, nc=player.c+dc;
+      if (nr>=0&&nr<ROWS&&nc>=0&&nc<COLS) {
+        if (G[nr][nc]===FLOOR) { player.r=nr; player.c=nc; }
+        else if (G[nr][nc]===CRACK && held>0) {
+          if (breakCrack(nr,nc) && gameState!=='win') { player.r=nr; player.c=nc; }
+        }
+      }
+    }
+
+    // 鍵拾い
+    for (const k of keyItems) {
+      if (!k.got && k.r===player.r && k.c===player.c) {
+        k.got=true; held++;
+        hkEl.textContent=held;
+        msgEl.textContent=`🗝 鍵を入手！(所持:${held})　ひびの壁に向かって進め！`;
+      }
+    }
+
+    // 鬼AI
+    if (graceTime<=0) {
+      const see=hasLOS(oni.r,oni.c,player.r,player.c);
+      const md=Math.abs(oni.r-player.r)+Math.abs(oni.c-player.c);
+      if (see) { if(oniMode==='patrol'){alertT=1.0;msgEl.textContent='👁 見つかった！逃げろ！';} oniMode='chase'; }
+      else if (oniMode==='chase' && md>4) oniMode='patrol';
+      if (alertT>0) alertT=Math.max(0,alertT-dt*2);
+
+      oniMT+=dt;
+      const delay=oniMode==='chase'?Math.max(0.30,0.38-broken*0.02):0.75;
+      if (oniMT>=delay) {
+        oniMT=0;
+        if (oniMode==='chase') {
+          const path=bfsPath(oni.r,oni.c,player.r,player.c);
+          if (path.length>1) { oni.r=path[1][0]; oni.c=path[1][1]; }
+        } else {
+          oniPatrol();
+        }
+      }
+    }
+
+    // 捕獲
+    if (oni.r===player.r && oni.c===player.c) {
+      gameState='dead'; shakeT=0.5; showResult();
+    }
+    if (shakeT>0) shakeT-=dt;
+  }
+
+  // 描画
+  ctx.fillStyle='#060610'; ctx.fillRect(0,0,480,480);
+  const sx=gameState==='dead'&&shakeT>0?(Math.random()-0.5)*8:0;
+  const sy=gameState==='dead'&&shakeT>0?(Math.random()-0.5)*8:0;
+  ctx.save(); ctx.translate(sx,sy);
+  drawMap(t);
+  drawKeys(t);
+  drawBfx();
+  drawPlayer();
+  drawOni(t, graceTime);
+  drawFog();
+  if (alertT>0) { ctx.fillStyle=`rgba(255,50,0,${alertT*0.12})`; ctx.fillRect(0,0,480,480); }
+  ctx.restore();
+  if (gameState==='dead'&&shakeT<=0) { ctx.fillStyle='rgba(60,0,0,0.45)'; ctx.fillRect(0,0,480,480); }
+}
+
+// ==== 入力 ====
+document.addEventListener('keydown', e => {
+  keys.add(e.key);
+  if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) e.preventDefault();
+});
+document.addEventListener('keyup', e => keys.delete(e.key));
+
+const dpadMap=[['btn-up','ArrowUp'],['btn-down','ArrowDown'],['btn-left','ArrowLeft'],['btn-right','ArrowRight']];
+for (const [id,key] of dpadMap) {
+  const b=document.getElementById(id);
+  b.addEventListener('mousedown', ()=>keys.add(key));
+  b.addEventListener('mouseup', ()=>keys.delete(key));
+  b.addEventListener('mouseleave', ()=>keys.delete(key));
+  b.addEventListener('touchstart', e=>{e.preventDefault();keys.add(key);},{passive:false});
+  b.addEventListener('touchend', e=>{e.preventDefault();keys.delete(key);},{passive:false});
 }
 
 initGame();
-document.addEventListener('keydown',e=>{pKeys.add(e.key);if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key))e.preventDefault();});
-document.addEventListener('keyup',e=>pKeys.delete(e.key));
-[['up','ArrowUp'],['down','ArrowDown'],['left','ArrowLeft'],['right','ArrowRight']].forEach(([id,key])=>{
-  const b=document.getElementById(id);
-  b.addEventListener('mousedown',()=>pKeys.add(key));b.addEventListener('mouseup',()=>pKeys.delete(key));b.addEventListener('mouseleave',()=>pKeys.delete(key));
-  b.addEventListener('touchstart',e=>{e.preventDefault();pKeys.add(key);},{passive:false});
-  b.addEventListener('touchend',e=>{e.preventDefault();pKeys.delete(key);},{passive:false});
-});
+requestAnimationFrame(loop);
 </script>
 </body>
 </html>

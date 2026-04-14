@@ -109,6 +109,9 @@ function sfxClear() {
 function sfxMushroom() { tone(500,0.08,0.3,'sine'); setTimeout(function(){ tone(700,0.12,0.25,'sine'); },80); setTimeout(function(){ tone(900,0.15,0.2,'sine'); },160); }
 function sfxStar()     { var ff=[600,800,1000,1200,1000,800]; ff.forEach(function(f,i){ setTimeout(function(){ tone(f,0.06,0.3,'sine'); },i*55); }); }
 function sfxOneUp()    { var ff=[520,660,780,1040]; ff.forEach(function(f,i){ setTimeout(function(){ tone(f,0.10,0.3,'sine'); },i*80); }); }
+function sfxThrow()    { tone(600,0.05,0.2,'sine'); setTimeout(function(){ tone(400,0.08,0.15,'sine'); },50); }
+function sfxFireball() { tone(800,0.04,0.18,'sine'); setTimeout(function(){ tone(500,0.06,0.12,'sine'); },40); }
+function sfxEnemyShoot(){ tone(300,0.06,0.15,'square'); setTimeout(function(){ tone(200,0.08,0.12,'square'); },50); }
 
 /* ---- INPUT ---- */
 var keys = {};
@@ -144,6 +147,7 @@ function isL()   { return !!(keys['ArrowLeft']  || keys['KeyA'] || tL); }
 function isR()   { return !!(keys['ArrowRight'] || keys['KeyD'] || tR); }
 function isJ()   { return !!(keys['Space'] || keys['ArrowUp'] || keys['KeyW'] || tJ); }
 function isRun() { return !!(keys['ShiftLeft'] || keys['ShiftRight']); }
+function isThrow() { return !!(keys['KeyZ'] || keys['KeyF']); }
 
 /* ---- GAME STATE ---- */
 var gs    = 'start';
@@ -166,7 +170,7 @@ function doAction() {
 /* ---- LEVEL ---- */
 function buildLevel(lv) {
   var LW = 175, LPX = LW * TW;
-  var solidGround = [], plats = [], enemies = [], coinList = [], qblocks = [], pipes = [], items = [];
+  var solidGround = [], plats = [], enemies = [], coinList = [], qblocks = [], pipes = [], items = [], projectiles = [];
 
   for (var gx = 0; gx < LW; gx++) {
     solidGround.push({ x: gx*TW, y: H-TW,   w: TW, h: TW });
@@ -193,18 +197,27 @@ function buildLevel(lv) {
       x += pw + 3;
     } else if (r < 0.34) {
       var itypes = ['coin','coin','coin','mushroom','mushroom','star','1up'];
+      if (lv >= 10) itypes.push('flower', 'flower'); /* Lv10〜ファイアフラワー */
       qblocks.push({ x: x*TW, y: H - TW*5, w: TW, h: TW, hit: false, bounce: 0,
                      itemType: itypes[Math.floor(Math.random()*itypes.length)] });
       x += 4;
     } else if (r < 0.50) {
       var ph = 2 + Math.floor(Math.random() * 2);
       pipes.push({ x: x*TW, y: H - TW*(2+ph), w: TW*2, h: TW*ph + TW*2 });
-      if (Math.random() < 0.4 + lv * 0.1)
-        enemies.push({ x: (x+0.5)*TW, y: H-TW*3, w: 28, h: 24, vx: -1.2*(1+lv*0.2), vy: 0, alive: true, stomp: false, stompT: 0 });
+      if (Math.random() < 0.4 + lv * 0.1) {
+        if (lv >= 5 && Math.random() < 0.45)
+          enemies.push(makeThrower((x+0.5)*TW, H-TW*3, lv));
+        else
+          enemies.push({ type:'normal', x: (x+0.5)*TW, y: H-TW*3, w: 28, h: 24, vx: -1.2*(1+lv*0.2), vy: 0, alive: true, stomp: false, stompT: 0 });
+      }
       x += 5;
     } else {
-      if (Math.random() < 0.35 + lv * 0.08)
-        enemies.push({ x: x*TW, y: H-TW*3, w: 28, h: 24, vx: -1.2*(1+lv*0.2), vy: 0, alive: true, stomp: false, stompT: 0 });
+      if (Math.random() < 0.35 + lv * 0.08) {
+        if (lv >= 5 && Math.random() < 0.4)
+          enemies.push(makeThrower(x*TW, H-TW*3, lv));
+        else
+          enemies.push({ type:'normal', x: x*TW, y: H-TW*3, w: 28, h: 24, vx: -1.2*(1+lv*0.2), vy: 0, alive: true, stomp: false, stompT: 0 });
+      }
       x += 5;
     }
   }
@@ -218,9 +231,17 @@ function buildLevel(lv) {
     qblocks: qblocks,
     pipes: pipes,
     items: items,
+    projectiles: projectiles,
     allSolid: solidGround.concat(plats).concat(pipes),
     flagX: (LW - 5) * TW
   };
+}
+
+function makeThrower(ex, ey, lv) {
+  return { type:'thrower', x: ex, y: ey, w: 26, h: 26,
+           vx: -(0.4 + lv*0.08), vy: 0, alive: true, stomp: false, stompT: 0,
+           shootCd: Math.floor(Math.random()*120),
+           shootInterval: Math.max(70, 160 - lv*8) };
 }
 
 /* ---- PLAYER ---- */
@@ -229,7 +250,8 @@ function resetPlayer() {
   P = { x: 80, y: H - TW*2 - PH, vx: 0, vy: 0,
         onG: false, dir: 1, wf: 0, wt: 0,
         jh: false, inv: 0, dead: false, dt: 0,
-        big: false, star: 0, starColor: 0 };
+        big: false, star: 0, starColor: 0,
+        hasFlower: false, throwCd: 0, throwHeld: false };
 }
 
 function startGame() {
@@ -444,6 +466,10 @@ function update() {
         lives++; elLi.textContent = lives;
         sfxOneUp();
         showPopup('1UP!!', it.x, it.y);
+      } else if (it.type === 'flower') {
+        p.hasFlower = true; addScore(1000);
+        sfxMushroom();
+        showPopup('FIRE! (Z key)', it.x, it.y);
       }
     }
   }
@@ -462,6 +488,19 @@ function update() {
     }
   }
 
+  /* ---- プレイヤー投擲 ---- */
+  if (p.throwCd > 0) p.throwCd--;
+  if (isThrow() && !p.throwHeld && p.hasFlower && p.throwCd <= 0) {
+    p.throwHeld = true; p.throwCd = 22;
+    ld.projectiles.push({
+      owner: 'player', x: p.x + (p.dir > 0 ? PW : 0), y: p.y + PH * 0.4,
+      vx: p.dir * 7, vy: -3.5, r: 6, active: true, bounces: 0
+    });
+    sfxThrow();
+  }
+  if (!isThrow()) p.throwHeld = false;
+
+  /* ---- 敵 ---- */
   for (var ei = 0; ei < ld.enemies.length; ei++) {
     var e = ld.enemies[ei];
     if (!e.alive) continue;
@@ -474,6 +513,23 @@ function update() {
     var eyy = resolveY(e.x, e.y, e.w, e.h, ld.allSolid, e.vy);
     e.y = eyy.y; if (eyy.onG) e.vy = 0;
     if (e.y > H + 80) { e.alive = false; continue; }
+
+    /* 投擲敵: 着地中にプレイヤーへ向けて発射 */
+    if (e.type === 'thrower' && eyy.onG) {
+      e.shootCd--;
+      if (e.shootCd <= 0) {
+        e.shootCd = e.shootInterval;
+        var dx = p.x - e.x, dy = p.y - e.y;
+        var dist = Math.sqrt(dx*dx + dy*dy) || 1, spd = 5;
+        ld.projectiles.push({
+          owner: 'enemy', x: e.x + e.w/2, y: e.y + e.h/2,
+          vx: dx/dist*spd, vy: dy/dist*spd - 1,
+          r: 6, active: true, bounces: 0
+        });
+        sfxEnemyShoot();
+      }
+    }
+
     if (p.inv > 0 || !overlaps(p.x, p.y, PW, PH, e.x, e.y, e.w, e.h)) continue;
     if (p.vy > 0 && p.y + PH < e.y + e.h * 0.55) {
       e.stomp = true; e.stompT = 0; e.h = 8;
@@ -481,15 +537,50 @@ function update() {
       spawnParts(e.x + e.w/2, e.y, '#884400', 8); sfxStomp();
       showPopup('+200', e.x + e.w/2, e.y);
     } else if (p.star > 0) {
-      /* star kills enemy on contact */
       e.stomp = true; e.stompT = 0; e.h = 8;
       addScore(500); spawnParts(e.x + e.w/2, e.y, '#FFD700', 10); sfxStomp();
       showPopup('+500 STAR!', e.x + e.w/2, e.y);
     } else if (p.big) {
-      /* big player shrinks */
       p.big = false; p.inv = 120; sfxHurt();
     } else { killPlayer(); }
   }
+
+  /* ---- 弾 ---- */
+  for (var pbi = 0; pbi < ld.projectiles.length; pbi++) {
+    var pb = ld.projectiles[pbi];
+    if (!pb.active) continue;
+    pb.vy += GRAV * 0.6;
+    pb.x += pb.vx; pb.y += pb.vy;
+    var pbry = resolveY(pb.x-pb.r, pb.y-pb.r, pb.r*2, pb.r*2, ld.allSolid, pb.vy);
+    if (pbry.onG) {
+      if (pb.owner === 'player') { pb.vy = -6; pb.bounces++; if (pb.bounces > 4) pb.active = false; sfxFireball(); }
+      else { pb.active = false; }
+    }
+    if (pbry.ceil) pb.vy = Math.abs(pb.vy);
+    var pbrx = resolveX(pb.x-pb.r, pb.y-pb.r, pb.r*2, pb.r*2, ld.allSolid);
+    if (pbrx.wall) pb.active = false;
+    if (pb.x < camX-30 || pb.x > camX+W+30 || pb.y > H+50) pb.active = false;
+    if (pb.owner === 'player') {
+      for (var ei2 = 0; ei2 < ld.enemies.length; ei2++) {
+        var e2 = ld.enemies[ei2];
+        if (!e2.alive || e2.stomp) continue;
+        if (overlaps(pb.x-pb.r, pb.y-pb.r, pb.r*2, pb.r*2, e2.x, e2.y, e2.w, e2.h)) {
+          pb.active = false; e2.stomp = true; e2.stompT = 0; e2.h = 8;
+          addScore(300); spawnParts(e2.x+e2.w/2, e2.y, '#FF8800', 10); sfxStomp();
+          showPopup('+300', e2.x+e2.w/2, e2.y);
+        }
+      }
+    }
+    if (pb.owner === 'enemy' && p.inv <= 0) {
+      if (overlaps(pb.x-pb.r, pb.y-pb.r, pb.r*2, pb.r*2, p.x, p.y, PW, PH)) {
+        pb.active = false;
+        if (p.star > 0) { /* 無敵中は無効 */ }
+        else if (p.big) { p.big = false; p.inv = 120; sfxHurt(); }
+        else { killPlayer(); }
+      }
+    }
+  }
+  ld.projectiles = ld.projectiles.filter(function(pb){ return pb.active; });
 
   if (p.x + PW > ld.flagX && p.x < ld.flagX + 20) {
     addScore(timer * 10 + 500); gs = 'win'; level++; sfxClear();
@@ -634,6 +725,19 @@ function draw() {
       ctx.fillRect(it.x+it.w*0.2, it.y+it.h*0.45, it.w*0.6, it.h*0.55);
       ctx.fillStyle = '#004400'; ctx.font = 'bold 11px monospace'; ctx.textAlign='center';
       ctx.fillText('1UP', it.x+it.w/2, it.y+it.h*0.82); ctx.textAlign='left';
+    } else if (it.type === 'flower') {
+      /* ファイアフラワー */
+      var fc = it.x+it.w/2, fbase = it.y+it.h;
+      ctx.fillStyle = '#228B22'; ctx.fillRect(fc-2, it.y+it.h*0.5, 4, it.h*0.5);
+      ctx.fillStyle = '#00AA00'; ctx.fillRect(fc-10, it.y+it.h*0.6, 10, 5);
+      var frot = Date.now()/300;
+      var petalC = ['#FF4500','#FF6600','#FF4500','#FF8C00','#FF4500'];
+      for (var fp=0; fp<5; fp++) {
+        var fa = fp*Math.PI*2/5 + frot;
+        ctx.fillStyle = petalC[fp];
+        ctx.beginPath(); ctx.arc(fc+Math.cos(fa)*9, it.y+it.h*0.32+Math.sin(fa)*9, 7, 0, Math.PI*2); ctx.fill();
+      }
+      ctx.fillStyle = '#FFFF00'; ctx.beginPath(); ctx.arc(fc, it.y+it.h*0.32, 6, 0, Math.PI*2); ctx.fill();
     }
   }
   for (var i = 0; i < ld.enemies.length; i++) {
@@ -641,14 +745,33 @@ function draw() {
     if (!e.alive) continue;
     if (e.x+e.w < camX-4 || e.x > camX+W+4) continue;
     var eh = e.stomp ? 9 : e.h, eyo = e.y + (e.h - eh);
-    ctx.fillStyle='#7B3800'; ctx.fillRect(e.x,eyo,e.w,eh);
-    if (!e.stomp) {
-      ctx.fillStyle='#FF2200';
-      ctx.fillRect(e.x+3,eyo+3,5,5); ctx.fillRect(e.x+e.w-8,eyo+3,5,5);
-      ctx.fillStyle='#000';
-      ctx.fillRect(e.x+4,eyo+4,3,3); ctx.fillRect(e.x+e.w-7,eyo+4,3,3);
-      ctx.fillStyle='#4A1A00';
-      ctx.fillRect(e.x,eyo+eh-7,9,7); ctx.fillRect(e.x+e.w-9,eyo+eh-7,9,7);
+    if (e.type === 'thrower') {
+      /* 投擲敵: 紫色・角あり */
+      ctx.fillStyle = '#6600CC'; ctx.fillRect(e.x, eyo, e.w, eh);
+      if (!e.stomp) {
+        ctx.fillStyle = '#AA44FF';
+        ctx.fillRect(e.x+3, eyo-6, 6, 7); ctx.fillRect(e.x+e.w-9, eyo-6, 6, 7); /* 角 */
+        ctx.fillStyle = '#FF0000';
+        ctx.fillRect(e.x+3, eyo+4, 6, 6); ctx.fillRect(e.x+e.w-9, eyo+4, 6, 6); /* 目 */
+        ctx.fillStyle = '#FFFF00';
+        ctx.fillRect(e.x+4, eyo+5, 4, 4); ctx.fillRect(e.x+e.w-8, eyo+5, 4, 4); /* 瞳 */
+        ctx.fillStyle = '#550099';
+        ctx.fillRect(e.x, eyo+eh-7, 10, 7); ctx.fillRect(e.x+e.w-10, eyo+eh-7, 10, 7); /* 足 */
+        /* 腕(投擲モーション) */
+        var armX = e.vx < 0 ? e.x : e.x+e.w-12;
+        ctx.fillStyle = '#8800EE';
+        ctx.save();
+        ctx.translate(armX+6, eyo+eh*0.5);
+        ctx.rotate(Math.sin(Date.now()/200)*0.5);
+        ctx.fillRect(-6,-3,12,6); ctx.restore();
+      }
+    } else {
+      ctx.fillStyle='#7B3800'; ctx.fillRect(e.x,eyo,e.w,eh);
+      if (!e.stomp) {
+        ctx.fillStyle='#FF2200'; ctx.fillRect(e.x+3,eyo+3,5,5); ctx.fillRect(e.x+e.w-8,eyo+3,5,5);
+        ctx.fillStyle='#000'; ctx.fillRect(e.x+4,eyo+4,3,3); ctx.fillRect(e.x+e.w-7,eyo+4,3,3);
+        ctx.fillStyle='#4A1A00'; ctx.fillRect(e.x,eyo+eh-7,9,7); ctx.fillRect(e.x+e.w-9,eyo+eh-7,9,7);
+      }
     }
   }
   /* flag */
@@ -691,6 +814,15 @@ function draw() {
   ctx.globalAlpha = 1;
 
   ctx.restore(); /* back to screen space */
+
+  /* flower indicator */
+  if (P.hasFlower) {
+    ctx.fillStyle = 'rgba(255,80,0,0.85)';
+    ctx.font = 'bold 13px monospace';
+    ctx.textAlign = 'right';
+    ctx.fillText('\uD83D\uDD25 FIRE (Z)', W - 8, H - 26);
+    ctx.textAlign = 'left';
+  }
 
   /* progress bar */
   var prog = Math.min(1, P.x / Math.max(1, ld.flagX - 80));
