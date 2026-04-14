@@ -1,69 +1,404 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Games.</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Games.</title>
+  <style>
+    :root {
+      --bg1: #2d1b69;
+      --bg2: #0f0f2b;
+      --panel: #d7d2ff;
+      --panel-dark: #6c63a8;
+      --panel-deep: #2d2860;
+      --accent: #ffd84d;
+      --accent-2: #ff7fd1;
+      --text: #17152a;
+      --white: #ffffff;
+      --shadow: rgba(0, 0, 0, 0.35);
+      --green: #66e08a;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "MS PGothic", "Osaka-Mono", "Courier New", monospace;
+      color: var(--white);
+      background:
+        radial-gradient(circle at top, rgba(255,255,255,0.12), transparent 30%),
+        linear-gradient(180deg, var(--bg1) 0%, var(--bg2) 100%);
+      image-rendering: pixelated;
+    }
+
+    .frame {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 24px 16px 48px;
+    }
+
+    .title-box {
+      position: relative;
+      margin-bottom: 24px;
+      padding: 18px 16px;
+      border: 4px solid var(--white);
+      background: linear-gradient(180deg, #7f75d6 0%, #564ba8 100%);
+      box-shadow: 0 10px 0 var(--panel-deep), 0 14px 18px var(--shadow);
+      text-align: center;
+    }
+
+    .title-box::before,
+    .title-box::after {
+      content: "";
+      position: absolute;
+      inset: 6px;
+      border: 2px solid rgba(255,255,255,0.6);
+      pointer-events: none;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(1.8rem, 4vw, 3rem);
+      line-height: 1.2;
+      letter-spacing: 0.08em;
+      text-shadow: 3px 3px 0 rgba(0, 0, 0, 0.45);
+    }
+
+    .subtitle {
+      margin: 10px 0 0;
+      color: #f3eeff;
+      font-size: 0.95rem;
+      letter-spacing: 0.06em;
+    }
+
+    .games-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+      gap: 22px;
+    }
+
+    .game-card {
+      padding: 12px;
+      background: linear-gradient(180deg, #cbc5ff 0%, #a79cf2 100%);
+      border: 4px solid #ffffff;
+      box-shadow: 0 8px 0 var(--panel-dark), 0 12px 18px var(--shadow);
+      color: var(--text);
+    }
+
+    .game-title {
+      margin: 0 0 10px;
+      padding: 8px 10px;
+      font-size: 1.05rem;
+      font-weight: bold;
+      background: linear-gradient(180deg, #2f2b62 0%, #1c1942 100%);
+      color: var(--accent);
+      border: 3px solid #ffffff;
+      text-align: center;
+      text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.35);
+    }
+
+    .game-links {
+      display: grid;
+      gap: 10px;
+    }
+
+    .game-link {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 74px;
+      padding: 8px;
+      text-decoration: none;
+      color: var(--text);
+      background: linear-gradient(180deg, #fffef6 0%, #efe9c8 100%);
+      border: 3px solid #2d2860;
+      box-shadow: 0 4px 0 rgba(45, 40, 96, 0.85);
+      transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
+    }
+
+    .game-link:hover,
+    .game-link:focus-visible {
+      transform: translateY(2px);
+      box-shadow: 0 2px 0 rgba(45, 40, 96, 0.85);
+      filter: brightness(1.03);
+      outline: none;
+    }
+
+    .game-link img {
+      width: 72px;
+      height: 54px;
+      flex-shrink: 0;
+      display: block;
+      object-fit: cover;
+      background:
+        linear-gradient(45deg, #d8d8d8 25%, transparent 25%),
+        linear-gradient(-45deg, #d8d8d8 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #d8d8d8 75%),
+        linear-gradient(-45deg, transparent 75%, #d8d8d8 75%);
+      background-size: 12px 12px;
+      background-position: 0 0, 0 6px, 6px -6px, -6px 0;
+      border: 3px solid #2d2860;
+      image-rendering: pixelated;
+    }
+
+    .link-text {
+      display: grid;
+      gap: 4px;
+    }
+
+    .link-label {
+      font-size: 1rem;
+      font-weight: bold;
+      line-height: 1.2;
+    }
+
+    .link-note {
+      font-size: 0.8rem;
+      color: #514b76;
+    }
+
+    .coming-soon {
+      background: linear-gradient(180deg, #2d2860 0%, #17152a 100%);
+      color: var(--white);
+      border: 4px solid var(--accent-2);
+      box-shadow: 0 8px 0 #7a2f60, 0 12px 18px var(--shadow);
+      text-align: center;
+      padding: 22px 14px;
+    }
+
+    .coming-soon .label {
+      display: inline-block;
+      margin-bottom: 10px;
+      padding: 6px 10px;
+      background: var(--accent-2);
+      color: #2c1431;
+      border: 3px solid var(--white);
+      font-weight: bold;
+    }
+
+    .coming-soon p {
+      margin: 0;
+      line-height: 1.7;
+    }
+
+    .footer-note {
+      margin-top: 24px;
+      padding: 12px 14px;
+      border: 3px solid var(--white);
+      background: rgba(255,255,255,0.08);
+      color: #f4f1ff;
+      font-size: 0.9rem;
+      line-height: 1.7;
+    }
+
+    .status-dot {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      margin-right: 8px;
+      background: var(--green);
+      border: 2px solid #17351f;
+      vertical-align: middle;
+    }
+
+    @media (max-width: 640px) {
+      .frame {
+        padding: 18px 12px 36px;
+      }
+
+      .game-link {
+        min-height: 68px;
+      }
+
+      .game-link img {
+        width: 64px;
+        height: 48px;
+      }
+    }
+  </style>
+</head>
 <body>
+  <main class="frame">
+    <header class="title-box">
+      <h1>作成したゲーム</h1>
+      <p class="subtitle">SUPER FAMICOM っぽい雰囲気のゲームリンク集</p>
+    </header>
 
-<h1>作成したゲーム</h1>
+    <section class="games-grid">
+      <article class="game-card">
+        <h2 class="game-title">パックマン</h2>
+        <div class="game-links">
+          <a class="game-link" href="pacman.html">
+            <img src="./img/pacman.png" alt="パックマン画像">
+            <span class="link-text">
+              <span class="link-label">パックマン</span>
+              <span class="link-note">PC版</span>
+            </span>
+          </a>
+          <a class="game-link" href="pacman_mobile.html">
+            <img src="./img/pacman.png" alt="パックマン スマホ用画像">
+            <span class="link-text">
+              <span class="link-label">パックマン（スマホ用）</span>
+              <span class="link-note">Touch Play</span>
+            </span>
+          </a>
+        </div>
+      </article>
 
-<div>
-<a href="pacman.html">パックマン</a>
-<br>
-<a href="pacman_mobile.html">パックマン（スマホ用）</a>  
-</div>
+      <article class="game-card">
+        <h2 class="game-title">マリオ</h2>
+        <div class="game-links">
+          <a class="game-link" href="mario.html">
+            <img src="./img/mario.png" alt="マリオ画像">
+            <span class="link-text">
+              <span class="link-label">マリオ</span>
+              <span class="link-note">PC版</span>
+            </span>
+          </a>
+          <a class="game-link" href="mario_mobile.html">
+            <img src="./img/mario.png" alt="マリオ スマホ用画像">
+            <span class="link-text">
+              <span class="link-label">マリオ（スマホ用）</span>
+              <span class="link-note">Touch Play</span>
+            </span>
+          </a>
+        </div>
+      </article>
 
-<div>
-<a href="mario.html">マリオ</a>
-<br>
-<a href="mario_mobile.html">マリオ（スマホ用）</a>
-</div>
+      <article class="game-card">
+        <h2 class="game-title">テトリス</h2>
+        <div class="game-links">
+          <a class="game-link" href="tetris.html">
+            <img src="./img/tetris.png" alt="テトリス画像">
+            <span class="link-text">
+              <span class="link-label">テトリス</span>
+              <span class="link-note">PC版</span>
+            </span>
+          </a>
+          <a class="game-link" href="tetris_mobile.html">
+            <img src="./img/tetris.png" alt="テトリス スマホ用画像">
+            <span class="link-text">
+              <span class="link-label">テトリス（スマホ用）</span>
+              <span class="link-note">Touch Play</span>
+            </span>
+          </a>
+        </div>
+      </article>
 
-  
-<div>
-<a href="tetris.html">テトリス</a>
-<br>
-<a href="tetris_mobile.html">テトリス（スマホ用）</a>
+      <article class="game-card">
+        <h2 class="game-title">青鬼</h2>
+        <div class="game-links">
+          <a class="game-link" href="aooni.html">
+            <img src="./img/aooni.png" alt="青鬼画像">
+            <span class="link-text">
+              <span class="link-label">青鬼</span>
+              <span class="link-note">PC版</span>
+            </span>
+          </a>
+          <a class="game-link" href="aooni_mobile.html">
+            <img src="./img/aooni.png" alt="青鬼 スマホ用画像">
+            <span class="link-text">
+              <span class="link-label">青鬼（スマホ用）</span>
+              <span class="link-note">Touch Play</span>
+            </span>
+          </a>
+        </div>
+      </article>
 
-</div>
+      <article class="game-card">
+        <h2 class="game-title">インベーダー</h2>
+        <div class="game-links">
+          <a class="game-link" href="invaders.html">
+            <img src="./img/invaders.png" alt="インベーダー画像">
+            <span class="link-text">
+              <span class="link-label">インベーダー</span>
+              <span class="link-note">PC版</span>
+            </span>
+          </a>
+          <a class="game-link" href="invaders_mobile.html">
+            <img src="./img/invaders.png" alt="インベーダー スマホ用画像">
+            <span class="link-text">
+              <span class="link-label">インベーダー（スマホ用）</span>
+              <span class="link-note">Touch Play</span>
+            </span>
+          </a>
+        </div>
+      </article>
 
+      <article class="game-card">
+        <h2 class="game-title">Dr.マリオ</h2>
+        <div class="game-links">
+          <a class="game-link" href="dr-mario.html">
+            <img src="./img/dr-mario.png" alt="Dr.マリオ画像">
+            <span class="link-text">
+              <span class="link-label">Dr.マリオ</span>
+              <span class="link-note">PC版</span>
+            </span>
+          </a>
+          <a class="game-link" href="dr-mario_mobile.html">
+            <img src="./img/dr-mario.png" alt="Dr.マリオ スマホ用画像">
+            <span class="link-text">
+              <span class="link-label">Dr.マリオ（スマホ用）</span>
+              <span class="link-note">Touch Play</span>
+            </span>
+          </a>
+        </div>
+      </article>
 
+      <article class="game-card">
+        <h2 class="game-title">ボンバーマン</h2>
+        <div class="game-links">
+          <a class="game-link" href="bomberman.html">
+            <img src="./img/bomberman.png" alt="ボンバーマン画像">
+            <span class="link-text">
+              <span class="link-label">ボンバーマン</span>
+              <span class="link-note">PC版</span>
+            </span>
+          </a>
+          <a class="game-link" href="bomberman_mobile.html">
+            <img src="./img/bomberman.png" alt="ボンバーマン スマホ用画像">
+            <span class="link-text">
+              <span class="link-label">ボンバーマン（スマホ用）</span>
+              <span class="link-note">Touch Play</span>
+            </span>
+          </a>
+        </div>
+      </article>
 
-<div>
-<a href="aooni.html">青鬼</a>
-<br>
-<a href="aooni_mobile.html">青鬼（スマホ用）</a>
-</div>
-  
+      <article class="game-card">
+        <h2 class="game-title">マインスイーパー</h2>
+        <div class="game-links">
+          <a class="game-link" href="minesweeper.html">
+            <img src="./img/minesweeper.png" alt="マインスイーパー画像">
+            <span class="link-text">
+              <span class="link-label">マインスイーパー</span>
+              <span class="link-note">PC版</span>
+            </span>
+          </a>
+          <a class="game-link" href="minesweeper_mobile.html">
+            <img src="./img/minesweeper.png" alt="マインスイーパー スマホ用画像">
+            <span class="link-text">
+              <span class="link-label">マインスイーパー（スマホ用）</span>
+              <span class="link-note">Touch Play</span>
+            </span>
+          </a>
+        </div>
+      </article>
 
-<div>
-<a href="invaders.html">インベーダー</a>
-<br>
-<a href="invaders_mobile.html">インベーダー（スマホ用）</a>
-</div>
+      <article class="coming-soon">
+        <div class="label">NEXT</div>
+        <p>COMING SOON</p>
+        <p>次のゲームを準備中です。</p>
+      </article>
+    </section>
 
-<div>
-<a href="dr-mario.html">Dr.マリオ</a>
-<br>
-<a href="dr-mario_mobile.html">Dr.マリオ（スマホ用）</a>
-</div>
-
-<div>
-<a href="bomberman.html">ボンバーマン</a>
-<br>
-<a href="bomberman_mobile.html">ボンバーマン（スマホ用）</a>
-</div>
-
-<div>
-<a href="minesweeper.html">マインスイーパー</a>
-<br>
-<a href="minesweeper_mobile.html">マインスイーパー（スマホ用）</a>
-</div>
-  
-<div>
-<a href="none.html">Cominig soon</a>
-</div>
-
+    <div class="footer-note">
+      <span class="status-dot"></span>
+      不具合については適宜修正対応中です。
+    </div>
+  </main>
 </body>
 </html>
