@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>青鬼 - 壁突破</title>
+<title>おにごっこ - 壁突破</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
 html,body{width:100%;height:100%;overflow:hidden;background:#0a0a18;font-family:monospace;}
@@ -354,7 +354,7 @@ function loop(now){
   const t=now/1000;
 
   if(gameState==='play'){
-    if(graceTime>0){graceTime=Math.max(0,graceTime-dt);if(graceTime>0)msgEl.textContent=`青鬼が動き出すまで ${Math.ceil(graceTime)} 秒！`;}
+    if(graceTime>0){graceTime=Math.max(0,graceTime-dt);if(graceTime>0)msgEl.textContent=`鬼が動き出すまで ${Math.ceil(graceTime)} 秒！`;}
     let dr=0,dc=0;
     if(pressedKeys.has('ArrowUp')||pressedKeys.has('w'))    dr=-1;
     if(pressedKeys.has('ArrowDown')||pressedKeys.has('s'))  dr= 1;
