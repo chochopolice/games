@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>青鬼 - 壁突破ゲーム</title>
+<title>おにごっこ - 壁突破ゲーム</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;}
 body{background:#111;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;font-family:monospace;}
@@ -358,7 +358,7 @@ function loop(now){
   const t=now/1000;
 
   if(gameState==='play'){
-    if(graceTime>0){graceTime=Math.max(0,graceTime-dt);if(graceTime>0)msgEl.textContent=`青鬼が動き出すまで ${Math.ceil(graceTime)} 秒！急げ！`;}
+    if(graceTime>0){graceTime=Math.max(0,graceTime-dt);if(graceTime>0)msgEl.textContent=`鬼が動き出すまで ${Math.ceil(graceTime)} 秒！急げ！`;}
 
     // プレイヤー移動
     let dr=0,dc=0;
