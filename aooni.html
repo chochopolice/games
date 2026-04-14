@@ -11,15 +11,12 @@ body{background:#111;display:flex;flex-direction:column;align-items:center;justi
 #canvas{border:3px solid #444;image-rendering:pixelated;display:block;}
 #hud{color:#ccc;font-size:13px;text-align:center;}
 #msg{color:#fa8;font-size:12px;min-height:18px;}
+#dpad{display:grid;grid-template-columns:52px 52px 52px;grid-template-rows:52px 52px;gap:4px;}
+.db{background:#1e1e30;color:#7af;border:1px solid #445;border-radius:8px;font-size:20px;
+    cursor:pointer;touch-action:none;-webkit-user-select:none;user-select:none;
+    display:flex;align-items:center;justify-content:center;}
 #owrap{position:relative;}
 #ov{position:absolute;top:0;left:0;width:100%;height:100%;display:flex;align-items:center;justify-content:center;}
-
-#dpad{display:grid;grid-template-columns:80px 80px 80px;grid-template-rows:80px 80px;gap:6px;margin-top:10px;}
-.db{background:#1e1e40;color:#8af;border:2px solid #446;border-radius:14px;font-size:32px;
-    cursor:pointer;touch-action:none;-webkit-user-select:none;user-select:none;
-    display:flex;align-items:center;justify-content:center;
-    box-shadow:0 4px 12px rgba(0,0,0,0.5);active-scale:0.92;}
-.db:active{background:#2a2a5a;transform:scale(0.93);}
 </style>
 </head>
 <body>
@@ -30,12 +27,6 @@ body{background:#111;display:flex;flex-direction:column;align-items:center;justi
   </div>
   <div id="hud">🗝 所持: <span id="hk">0</span> &nbsp;|&nbsp; 💥 突破: <span id="hb">0</span>/3</div>
   <div id="msg">鍵を拾って、ひびの壁を突破しろ！</div>
-    <button class="db" id="btn-up">▲</button>
-    <div></div>
-    <button class="db" id="btn-left">◀</button>
-    <button class="db" id="btn-down">▼</button>
-    <button class="db" id="btn-right">▶</button>
-  </div>
   <div id="dpad">
     <div></div>
     <button class="db" id="btn-up">▲</button>
@@ -431,44 +422,6 @@ function loop(now){
 // ==== 入力 ====
 document.addEventListener('keydown',e=>{pressedKeys.add(e.key);if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key))e.preventDefault();});
 document.addEventListener('keyup',e=>pressedKeys.delete(e.key));
-
-
-// ==== タッチ操作（スワイプ & タップ）====
-(function(){
-  let tx0=null, ty0=null, tMoved=false;
-  const SWIPE_MIN=18; // スワイプと判定する最小px
-
-  canvas.addEventListener('touchstart', e=>{
-    e.preventDefault();
-    const t=e.changedTouches[0];
-    tx0=t.clientX; ty0=t.clientY; tMoved=false;
-  },{passive:false});
-
-  canvas.addEventListener('touchmove', e=>{
-    e.preventDefault();
-    if(tx0===null)return;
-    const t=e.changedTouches[0];
-    const dx=t.clientX-tx0, dy=t.clientY-ty0;
-    const adx=Math.abs(dx), ady=Math.abs(dy);
-    if(adx<SWIPE_MIN&&ady<SWIPE_MIN)return;
-    tMoved=true;
-    // 方向確定してキー送出
-    pressedKeys.clear();
-    if(adx>ady){ pressedKeys.add(dx>0?'ArrowRight':'ArrowLeft'); }
-    else        { pressedKeys.add(dy>0?'ArrowDown':'ArrowUp');   }
-  },{passive:false});
-
-  canvas.addEventListener('touchend', e=>{
-    e.preventDefault();
-    pressedKeys.clear();
-    tx0=null; ty0=null;
-  },{passive:false});
-
-  canvas.addEventListener('touchcancel', e=>{
-    pressedKeys.clear(); tx0=null; ty0=null;
-  },{passive:false});
-})();
-
 for(const[id,key]of[['btn-up','ArrowUp'],['btn-down','ArrowDown'],['btn-left','ArrowLeft'],['btn-right','ArrowRight']]){
   const b=document.getElementById(id);
   b.addEventListener('mousedown',()=>pressedKeys.add(key));
