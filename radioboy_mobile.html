@@ -267,8 +267,9 @@
     }
 
     .pad {
-      grid-template-columns: repeat(3, minmax(0, 80px));
+      grid-template-columns: repeat(2, minmax(0, 80px));
       justify-content: start;
+      gap: 8px;
     }
 
     .act {
@@ -292,10 +293,6 @@
     .dockBtn.jump { background: rgba(34, 211, 238, 0.18); font-size: 18px; }
     .dockBtn.attack { background: rgba(236, 72, 153, 0.22); font-size: 18px; }
 
-    .pad .ghost {
-      visibility: hidden;
-      pointer-events: none;
-    }
 
     .desktopHelp {
       display: none;
@@ -315,7 +312,7 @@
       .actions { grid-template-columns: repeat(2, minmax(0,1fr)); }
       .actions button:last-child { grid-column: 1 / -1; }
       .dockInner { grid-template-columns: 1fr 1fr; gap: 10px; }
-      .pad { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .pad { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
       .dockBtn { min-height: 68px; border-radius: 20px; }
       .card { min-height: 62px; font-size: 22px; }
     }
@@ -395,11 +392,7 @@
   <div class="mobileDock show" id="mobileDock">
     <div class="dockInner">
       <div class="pad">
-        <button class="dockBtn ghost">.</button>
-        <button class="dockBtn ghost">.</button>
-        <button class="dockBtn ghost">.</button>
         <button class="dockBtn" data-control="left">◀</button>
-        <button class="dockBtn ghost">.</button>
         <button class="dockBtn" data-control="right">▶</button>
       </div>
       <div class="act">
