@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>ワギャン風 Webゲーム</title>
+  <title>Radio Boy</title>
   <style>
     :root {
       --bg: #020617;
@@ -245,7 +245,7 @@
   <div class="app">
     <aside class="sidebar">
       <section class="panel">
-        <h1>ワギャン風 Webゲーム</h1>
+        <h1>Radio Boy</h1>
         <p class="sub">
           横スクロール、音波で敵を止めるアクション、
           ゴール後の絵合わせボス戦を入れた、1ファイル完結のオリジナル試作です。
@@ -253,7 +253,7 @@
 
         <div class="stats">
           <div class="stat"><div class="label">状態</div><div class="value" id="uiPhase">タイトル</div></div>
-          <div class="stat"><div class="label">残機</div><div class="value" id="uiLives">3</div></div>
+          <div class="stat"><div class="label">耐久</div><div class="value" id="uiLives">2</div></div>
           <div class="stat"><div class="label">移動</div><div class="value">← → / A D</div></div>
           <div class="stat"><div class="label">攻撃</div><div class="value">Z / J</div></div>
         </div>
@@ -329,7 +329,7 @@
       const PLAYER_SPEED = 4.2;
       const JUMP_POWER = -13.5;
       const WAVE_SPEED = 9;
-      const MAX_LIVES = 3;
+      const MAX_LIVES = 2;
       const CARD_SYMBOLS = ["ガ", "オ", "ー", "ン", "ラ", "ド", "★", "♪", "!", "?", "◎", "△", "□", "○", "Z", "P"];
 
       const STAGES = {
@@ -586,7 +586,7 @@
         boss = createBoss();
         frame = 0;
         phase = toTitle ? "title" : "stage";
-        message = toTitle ? "スタートで開始" : "STAGE 1 開始！ ガオー波で敵を止めて進もう";
+        message = toTitle ? "スタートで開始" : "STAGE 1 開始！ 2ヒットでステージ最初から";
         updateUI();
         renderBossCards();
       }
@@ -595,16 +595,30 @@
         resetAll(false);
       }
 
+      function restartCurrentStage(text) {
+        if (bossTimeout) {
+          clearTimeout(bossTimeout);
+          bossTimeout = null;
+        }
+        state = createStage();
+        boss = createBoss();
+        phase = "stage";
+        lives = MAX_LIVES;
+        setMessage(text || `STAGE ${currentStage} を最初からやり直し`);
+        updateUI();
+        renderBossCards();
+      }
+
       function damagePlayer(text) {
-        lives = Math.max(0, lives - 1);
-        if (lives <= 0) {
-          phase = "gameover";
-          setMessage(text || "ゲームオーバー");
+        if (lives > 1) {
+          lives -= 1;
+          state.player.invuln = 110;
+          state.player.vy = -8;
+          state.player.x = clamp(state.player.x - state.player.facing * 28, 0, getStageConfig().worldW - state.player.w);
+          setMessage(text || `被弾！ あと${lives}回でステージやり直し`);
           return;
         }
-        state.player = createPlayer();
-        state.player.invuln = 90;
-        setMessage(text || "ダメージ！");
+        restartCurrentStage(`2回被弾したので STAGE ${currentStage} の最初から`);
       }
 
       function toBossPhase() {
@@ -626,7 +640,7 @@
         state = createStage();
         boss = createBoss();
         phase = "stage";
-        setMessage("STAGE 2 開始！ 敵が増え、スタン時間も短くなった");
+        setMessage("STAGE 2 開始！ 2ヒットで最初から。敵もボスも強化済み");
         updateUI();
         renderBossCards();
       }
@@ -839,7 +853,14 @@
         }
 
         if (player.y > VIEW_H + 120) {
-          damagePlayer("落下してミス！");
+          if (lives > 1) {
+            lives -= 1;
+            state.player = createPlayer();
+            state.player.invuln = 90;
+            setMessage(`落下！ あと${lives}回でステージやり直し`);
+          } else {
+            restartCurrentStage(`2回ミスしたので STAGE ${currentStage} の最初から`);
+          }
           return;
         }
 
@@ -1038,7 +1059,7 @@
         ctx.font = "bold 18px sans-serif";
         ctx.fillText(`MODE: ${phaseLabel(phase)}`, 32, 44);
         ctx.font = "16px sans-serif";
-        ctx.fillText(`LIFE: ${"●".repeat(Math.max(0, lives))}`, 32, 68);
+        ctx.fillText(`HP: ${"●".repeat(Math.max(0, lives))}`, 32, 68);
         ctx.fillStyle = currentStage === 2 ? "#f9a8d4" : "#67e8f9";
         ctx.fillText(message, 32, 92);
       }
