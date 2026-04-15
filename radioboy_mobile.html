@@ -1,0 +1,1282 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
+  <title>Radio Boy</title>
+  <style>
+    :root {
+      --bg: #020617;
+      --bg2: #0f172a;
+      --panel: rgba(15, 23, 42, 0.94);
+      --panel-soft: rgba(30, 41, 59, 0.92);
+      --text: #e5eefc;
+      --muted: #94a3b8;
+      --line: rgba(255,255,255,0.12);
+      --cyan: #22d3ee;
+      --pink: #f472b6;
+      --green: #34d399;
+      --danger: #fb7185;
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background: radial-gradient(circle at top, #172554 0%, #0f172a 35%, #020617 100%);
+      color: var(--text);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      overscroll-behavior: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      padding-bottom: calc(150px + var(--safe-bottom));
+    }
+
+    .app {
+      width: min(100%, 980px);
+      margin: 0 auto;
+      padding: 12px;
+      display: grid;
+      gap: 12px;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      padding: 14px;
+      box-shadow: 0 18px 50px rgba(0,0,0,0.32);
+      backdrop-filter: blur(8px);
+    }
+
+    .topbar {
+      display: grid;
+      gap: 10px;
+      position: sticky;
+      top: 0;
+      z-index: 30;
+      padding-top: max(4px, env(safe-area-inset-top, 0px));
+    }
+
+    .titleRow {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .title {
+      font-size: 22px;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+    }
+
+    .mini {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .statusGrid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0,1fr));
+      gap: 8px;
+    }
+
+    .stat {
+      background: var(--panel-soft);
+      border-radius: 16px;
+      padding: 10px 12px;
+      min-height: 58px;
+      display: grid;
+      align-content: center;
+    }
+
+    .stat .label {
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .stat .value {
+      margin-top: 4px;
+      font-size: 13px;
+      font-weight: 800;
+      line-height: 1.3;
+    }
+
+    .message {
+      background: rgba(8, 47, 73, 0.72);
+      border: 1px solid rgba(34, 211, 238, 0.18);
+      color: #a5f3fc;
+      min-height: 48px;
+      border-radius: 16px;
+      padding: 12px;
+      display: flex;
+      align-items: center;
+      line-height: 1.5;
+      font-size: 14px;
+    }
+
+    .actions {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0,1fr));
+      gap: 8px;
+    }
+
+    button {
+      border: 0;
+      border-radius: 16px;
+      padding: 12px 14px;
+      background: #334155;
+      color: white;
+      font-size: 14px;
+      font-weight: 800;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+
+    button:active { transform: scale(0.98); }
+    button.primary { background: var(--cyan); color: #082f49; }
+    button.secondary { background: #475569; }
+    button.pink { background: #ec4899; }
+
+    .canvasWrap {
+      border-radius: 24px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      background: #020617;
+      box-shadow: 0 18px 50px rgba(0,0,0,0.32);
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: auto;
+      aspect-ratio: 16 / 9;
+      background: #020617;
+      touch-action: none;
+    }
+
+    .boss {
+      display: none;
+      border: 1px solid rgba(244,114,182,0.24);
+    }
+
+    .boss.show { display: block; }
+
+    .bossTop {
+      display: grid;
+      gap: 8px;
+    }
+
+    .turn {
+      background: rgba(30, 41, 59, 0.92);
+      border-radius: 14px;
+      padding: 10px 12px;
+      color: #f9a8d4;
+      font-weight: 800;
+      font-size: 14px;
+    }
+
+    .cards {
+      margin-top: 14px;
+      display: grid;
+      gap: 8px;
+    }
+
+    .card {
+      min-height: 66px;
+      border-radius: 16px;
+      border: 1px solid var(--line);
+      background: #1e293b;
+      color: #64748b;
+      font-size: 24px;
+      font-weight: 900;
+      padding: 0;
+    }
+
+    .card.open,
+    .card.matched {
+      background: #f9a8d4;
+      color: #1f2937;
+      border-color: #fbcfe8;
+    }
+
+    .card.matched {
+      outline: 2px solid var(--cyan);
+    }
+
+    details.panel summary {
+      cursor: pointer;
+      font-weight: 800;
+      list-style: none;
+    }
+
+    details.panel summary::-webkit-details-marker { display: none; }
+
+    .note {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.7;
+      margin-top: 10px;
+    }
+
+    .ruleList {
+      margin: 10px 0 0;
+      padding-left: 18px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.8;
+    }
+
+    .mobileDock {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 40;
+      padding: 10px 12px calc(10px + var(--safe-bottom));
+      background: linear-gradient(to top, rgba(2, 6, 23, 0.96), rgba(2, 6, 23, 0.72), transparent);
+      pointer-events: none;
+      display: none;
+    }
+
+    .mobileDock.show {
+      display: block;
+    }
+
+    .dockInner {
+      width: min(100%, 980px);
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      align-items: end;
+      pointer-events: auto;
+    }
+
+    .pad,
+    .act {
+      display: grid;
+      gap: 10px;
+    }
+
+    .pad {
+      grid-template-columns: repeat(3, minmax(0, 80px));
+      justify-content: start;
+    }
+
+    .act {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      justify-content: end;
+    }
+
+    .dockBtn {
+      min-height: 74px;
+      border-radius: 22px;
+      border: 1px solid rgba(255,255,255,0.14);
+      background: rgba(30, 41, 59, 0.95);
+      color: white;
+      font-size: 26px;
+      font-weight: 900;
+      user-select: none;
+      touch-action: none;
+      box-shadow: 0 12px 28px rgba(0,0,0,0.28);
+    }
+
+    .dockBtn.jump { background: rgba(34, 211, 238, 0.18); font-size: 18px; }
+    .dockBtn.attack { background: rgba(236, 72, 153, 0.22); font-size: 18px; }
+
+    .pad .ghost {
+      visibility: hidden;
+      pointer-events: none;
+    }
+
+    .desktopHelp {
+      display: none;
+    }
+
+    @media (min-width: 900px) {
+      body { padding-bottom: 24px; }
+      .app { grid-template-columns: 320px 1fr; align-items: start; }
+      .topbar { position: static; }
+      .mobileDock { display: none !important; }
+      .desktopHelp { display: block; }
+    }
+
+    @media (max-width: 640px) {
+      .title { font-size: 20px; }
+      .statusGrid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+      .actions { grid-template-columns: repeat(2, minmax(0,1fr)); }
+      .actions button:last-child { grid-column: 1 / -1; }
+      .dockInner { grid-template-columns: 1fr 1fr; gap: 10px; }
+      .pad { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .dockBtn { min-height: 68px; border-radius: 20px; }
+      .card { min-height: 62px; font-size: 22px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <section class="topbar">
+      <div class="panel">
+        <div class="titleRow">
+          <div>
+            <div class="title">Radio Boy</div>
+            <div class="mini">モバイル版 / 縦画面対応 / 2ステージ制</div>
+          </div>
+          <button id="fullBtn" class="secondary">全画面</button>
+        </div>
+
+        <div class="statusGrid" style="margin-top:12px;">
+          <div class="stat"><div class="label">状態</div><div class="value" id="uiPhase">タイトル</div></div>
+          <div class="stat"><div class="label">耐久</div><div class="value" id="uiLives">2</div></div>
+          <div class="stat"><div class="label">移動</div><div class="value">左右</div></div>
+          <div class="stat"><div class="label">操作</div><div class="value">ジャンプ / 波</div></div>
+        </div>
+
+        <div class="message" id="uiMessage" style="margin-top:12px;">スタートで開始</div>
+
+        <div class="actions" style="margin-top:12px;">
+          <button class="primary" id="startBtn">Start</button>
+          <button id="resetBtn">Reset</button>
+          <button id="pauseBtn" class="pink">Pause</button>
+        </div>
+      </div>
+
+      <details class="panel desktopHelp">
+        <summary>ルール / 操作</summary>
+        <ul class="ruleList">
+          <li>敵は音波で一時停止。止まった敵の上に乗れます。</li>
+          <li>1回被弾では継続、2回目でそのステージ最初からです。</li>
+          <li>ゴール後はカードボス戦へ切り替わります。</li>
+          <li>ステージ2は敵が増え、ボスも記憶力が上がります。</li>
+        </ul>
+      </details>
+    </section>
+
+    <main style="display:grid; gap:12px; align-content:start;">
+      <section class="canvasWrap" id="canvasWrap">
+        <canvas id="game" width="960" height="540"></canvas>
+      </section>
+
+      <section class="panel boss" id="bossPanel">
+        <div class="bossTop">
+          <div style="font-size:18px; font-weight:800;">ボス戦：絵合わせ</div>
+          <div class="mini">ゴールするとここへ切り替わります。同点以上で勝利です。</div>
+          <div class="turn" id="turnText">あなたのターン</div>
+        </div>
+
+        <div class="cards" id="cards"></div>
+
+        <div class="statusGrid" style="margin-top:14px;">
+          <div class="stat"><div class="label">あなた</div><div class="value" id="playerPairs">0組</div></div>
+          <div class="stat"><div class="label">ボス</div><div class="value" id="bossPairs">0組</div></div>
+          <div class="stat"><div class="label">残り</div><div class="value" id="remainPairs">8組</div></div>
+          <div class="stat"><div class="label">勝利条件</div><div class="value">同点以上</div></div>
+        </div>
+      </section>
+
+      <details class="panel">
+        <summary>このモバイル版のポイント</summary>
+        <div class="note">
+          縦画面で遊びやすいように、上にステータス、中央にゲーム画面、下に固定操作ボタンを置いています。
+          ゴール後はプレイ画面からカードゲーム画面へ切り替わります。
+        </div>
+      </details>
+    </main>
+  </div>
+
+  <div class="mobileDock show" id="mobileDock">
+    <div class="dockInner">
+      <div class="pad">
+        <button class="dockBtn ghost">.</button>
+        <button class="dockBtn ghost">.</button>
+        <button class="dockBtn ghost">.</button>
+        <button class="dockBtn" data-control="left">◀</button>
+        <button class="dockBtn ghost">.</button>
+        <button class="dockBtn" data-control="right">▶</button>
+      </div>
+      <div class="act">
+        <button class="dockBtn jump" data-control="up">ジャンプ</button>
+        <button class="dockBtn attack" data-control="attack">ガオー波</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (() => {
+      const VIEW_W = 960;
+      const VIEW_H = 540;
+      const GRAVITY = 0.82;
+      const PLAYER_SPEED = 4.2;
+      const JUMP_POWER = -13.5;
+      const WAVE_SPEED = 9;
+      const MAX_HITS = 2;
+      const CARD_SYMBOLS = ["ガ", "オ", "ー", "ン", "ラ", "ド", "★", "♪", "!", "?", "◎", "△", "□", "○", "Z", "P"];
+
+      const STAGES = {
+        1: {
+          worldW: 2600,
+          playerStart: { x: 70, y: 380 },
+          goal: { x: 2460, y: 395, w: 48, h: 75 },
+          waveLife: 26,
+          stunFrames: 145,
+          attackCooldown: 16,
+          bossPairs: 10,
+          bossSmartChance: 0.35,
+          bossContinueOnMatch: true,
+          platforms: [
+            { x: 0, y: 470, w: 420, h: 70 },
+            { x: 520, y: 420, w: 120, h: 20 },
+            { x: 720, y: 360, w: 120, h: 20 },
+            { x: 910, y: 300, w: 130, h: 20 },
+            { x: 1100, y: 360, w: 150, h: 20 },
+            { x: 1320, y: 430, w: 160, h: 20 },
+            { x: 1560, y: 360, w: 130, h: 20 },
+            { x: 1750, y: 300, w: 130, h: 20 },
+            { x: 1960, y: 380, w: 170, h: 20 },
+            { x: 2240, y: 470, w: 310, h: 70 }
+          ],
+          enemies: [
+            { x: 250, y: 430, left: 70, right: 360, speed: 1.25 },
+            { x: 555, y: 385, left: 530, right: 605, speed: 1.45 },
+            { x: 935, y: 265, left: 925, right: 995, speed: 1.6 },
+            { x: 1365, y: 395, left: 1340, right: 1430, speed: 1.55 },
+            { x: 1585, y: 325, left: 1570, right: 1650, speed: 1.65 },
+            { x: 1995, y: 345, left: 1980, right: 2080, speed: 1.8 },
+            { x: 2320, y: 430, left: 2280, right: 2470, speed: 1.5 }
+          ]
+        },
+        2: {
+          worldW: 3450,
+          playerStart: { x: 60, y: 380 },
+          goal: { x: 3280, y: 395, w: 48, h: 75 },
+          waveLife: 22,
+          stunFrames: 105,
+          attackCooldown: 20,
+          bossPairs: 12,
+          bossSmartChance: 0.7,
+          bossContinueOnMatch: true,
+          platforms: [
+            { x: 0, y: 470, w: 260, h: 70 },
+            { x: 340, y: 420, w: 100, h: 18 },
+            { x: 520, y: 350, w: 90, h: 18 },
+            { x: 670, y: 290, w: 90, h: 18 },
+            { x: 830, y: 360, w: 90, h: 18 },
+            { x: 990, y: 430, w: 130, h: 18 },
+            { x: 1180, y: 330, w: 90, h: 18 },
+            { x: 1350, y: 260, w: 100, h: 18 },
+            { x: 1520, y: 340, w: 90, h: 18 },
+            { x: 1670, y: 430, w: 120, h: 18 },
+            { x: 1860, y: 350, w: 100, h: 18 },
+            { x: 2060, y: 300, w: 100, h: 18 },
+            { x: 2220, y: 330, w: 90, h: 18 },
+            { x: 2380, y: 420, w: 110, h: 18 },
+            { x: 2570, y: 350, w: 100, h: 18 },
+            { x: 2750, y: 280, w: 100, h: 18 },
+            { x: 2940, y: 360, w: 120, h: 18 },
+            { x: 3140, y: 470, w: 240, h: 70 }
+          ],
+          enemies: [
+            { x: 180, y: 430, left: 70, right: 220, speed: 1.5 },
+            { x: 360, y: 385, left: 350, right: 415, speed: 1.8 },
+            { x: 535, y: 315, left: 525, right: 585, speed: 1.95 },
+            { x: 845, y: 325, left: 840, right: 900, speed: 2.0 },
+            { x: 1015, y: 395, left: 1000, right: 1085, speed: 1.85 },
+            { x: 1365, y: 225, left: 1360, right: 1425, speed: 2.05 },
+            { x: 1685, y: 395, left: 1680, right: 1755, speed: 2.0 },
+            { x: 1875, y: 315, left: 1870, right: 1940, speed: 2.1 },
+            { x: 2075, y: 265, left: 2070, right: 2140, speed: 2.25 },
+            { x: 2585, y: 315, left: 2580, right: 2650, speed: 2.15 },
+            { x: 2955, y: 325, left: 2950, right: 3030, speed: 2.2 },
+            { x: 3205, y: 430, left: 3180, right: 3330, speed: 1.9 }
+          ]
+        }
+      };
+
+      const canvas = document.getElementById("game");
+      const ctx = canvas.getContext("2d");
+      const uiPhase = document.getElementById("uiPhase");
+      const uiLives = document.getElementById("uiLives");
+      const uiMessage = document.getElementById("uiMessage");
+      const bossPanel = document.getElementById("bossPanel");
+      const canvasWrap = document.getElementById("canvasWrap");
+      const cardsEl = document.getElementById("cards");
+      const turnText = document.getElementById("turnText");
+      const playerPairsEl = document.getElementById("playerPairs");
+      const bossPairsEl = document.getElementById("bossPairs");
+      const remainPairsEl = document.getElementById("remainPairs");
+      const startBtn = document.getElementById("startBtn");
+      const resetBtn = document.getElementById("resetBtn");
+      const pauseBtn = document.getElementById("pauseBtn");
+      const fullBtn = document.getElementById("fullBtn");
+      const mobileDock = document.getElementById("mobileDock");
+
+      const keys = { left: false, right: false, up: false, attack: false };
+      const touch = { left: false, right: false, up: false, attack: false };
+
+      let currentStage = 1;
+      let phase = "title";
+      let hitsLeft = MAX_HITS;
+      let message = "スタートで開始";
+      let frame = 0;
+      let state = null;
+      let boss = null;
+      let bossTimeout = null;
+      let isPaused = false;
+
+      function isMobileLike() {
+        return window.matchMedia("(max-width: 899px)").matches || window.matchMedia("(pointer: coarse)").matches;
+      }
+
+      function updateDockVisibility() {
+        mobileDock.classList.toggle("show", isMobileLike() && phase === "stage");
+      }
+
+      function vibrate(ms) {
+        if (navigator.vibrate) navigator.vibrate(ms);
+      }
+
+      function getStageConfig(stageNo = currentStage) {
+        return STAGES[stageNo];
+      }
+
+      function shuffle(arr) {
+        const a = arr.slice();
+        for (let i = a.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [a[i], a[j]] = [a[j], a[i]];
+        }
+        return a;
+      }
+
+      function clamp(n, min, max) {
+        return Math.max(min, Math.min(max, n));
+      }
+
+      function overlaps(a, b) {
+        return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+      }
+
+      function phaseLabel(v) {
+        if (v === "title") return "タイトル";
+        if (v === "stage") return `アクション / STAGE ${currentStage}`;
+        if (v === "boss") return `ボス戦 / STAGE ${currentStage}`;
+        if (v === "clear") return "全クリア";
+        return "ゲームオーバー";
+      }
+
+      function createPlayer() {
+        const cfg = getStageConfig();
+        return {
+          x: cfg.playerStart.x,
+          y: cfg.playerStart.y,
+          w: 34,
+          h: 40,
+          vx: 0,
+          vy: 0,
+          facing: 1,
+          onGround: false,
+          invuln: 0,
+          attackCooldown: 0
+        };
+      }
+
+      function createEnemies() {
+        const cfg = getStageConfig();
+        return cfg.enemies.map((e, i) => ({
+          id: i + 1,
+          x: e.x,
+          y: e.y,
+          w: 34,
+          h: 34,
+          dir: i % 2 === 0 ? 1 : -1,
+          speed: e.speed,
+          left: e.left,
+          right: e.right,
+          stun: 0
+        }));
+      }
+
+      function createStage() {
+        const cfg = getStageConfig();
+        return {
+          worldW: cfg.worldW,
+          player: createPlayer(),
+          waves: [],
+          enemies: createEnemies(),
+          goal: { ...cfg.goal },
+          cameraX: 0,
+          platforms: cfg.platforms.map((p) => ({ ...p })),
+          groundSegments: cfg.platforms.filter((p) => p.h >= 50).map((p) => ({ ...p })),
+          stars: Array.from({ length: 48 }, (_, i) => ({
+            x: (i * 83) % cfg.worldW,
+            y: 40 + ((i * 39) % 190),
+            r: 1 + (i % 3)
+          }))
+        };
+      }
+
+      function createBoss() {
+        const cfg = getStageConfig();
+        const deckValues = CARD_SYMBOLS.slice(0, cfg.bossPairs);
+        const deck = shuffle(deckValues.concat(deckValues)).map((value, index) => ({
+          id: index,
+          value,
+          open: false,
+          matched: false,
+          seen: false
+        }));
+        return {
+          deck,
+          selected: [],
+          playerPairs: 0,
+          enemyPairs: 0,
+          playerTurn: true,
+          lock: false,
+          turn: `ステージ${currentStage}ボス：あなたのターン`
+        };
+      }
+
+      function updateUI() {
+        uiPhase.textContent = phaseLabel(phase);
+        uiLives.textContent = String(hitsLeft);
+        uiMessage.textContent = message;
+        bossPanel.classList.toggle("show", phase === "boss");
+        canvasWrap.style.display = phase === "boss" ? "none" : "block";
+        pauseBtn.textContent = isPaused ? "Resume" : "Pause";
+
+        if (boss) {
+          playerPairsEl.textContent = `${boss.playerPairs}組`;
+          bossPairsEl.textContent = `${boss.enemyPairs}組`;
+          remainPairsEl.textContent = `${boss.deck.filter((card) => !card.matched).length / 2}組`;
+          turnText.textContent = boss.turn;
+        }
+        updateDockVisibility();
+      }
+
+      function renderBossCards() {
+        cardsEl.innerHTML = "";
+        if (!boss) return;
+
+        const cols = boss.deck.length >= 24 ? (isMobileLike() ? 4 : 6) : (isMobileLike() ? 4 : 5);
+        cardsEl.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
+
+        boss.deck.forEach((card) => {
+          const btn = document.createElement("button");
+          btn.className = `card${card.open ? " open" : ""}${card.matched ? " matched" : ""}`;
+          btn.textContent = card.open || card.matched ? card.value : "?";
+          btn.disabled = phase !== "boss";
+          btn.addEventListener("click", () => handleCardClick(card.id));
+          cardsEl.appendChild(btn);
+        });
+      }
+
+      function setMessage(text) {
+        message = text;
+        updateUI();
+      }
+
+      function resetAll(toTitle = true) {
+        if (bossTimeout) clearTimeout(bossTimeout);
+        currentStage = 1;
+        hitsLeft = MAX_HITS;
+        state = createStage();
+        boss = createBoss();
+        frame = 0;
+        isPaused = false;
+        phase = toTitle ? "title" : "stage";
+        message = toTitle ? "スタートで開始" : "STAGE 1 開始！ 2ヒットでステージ最初から";
+        updateUI();
+        renderBossCards();
+      }
+
+      function startGame() {
+        resetAll(false);
+      }
+
+      function restartCurrentStage(text) {
+        if (bossTimeout) clearTimeout(bossTimeout);
+        state = createStage();
+        boss = createBoss();
+        phase = "stage";
+        hitsLeft = MAX_HITS;
+        isPaused = false;
+        setMessage(text || `STAGE ${currentStage} を最初からやり直し`);
+        updateUI();
+        renderBossCards();
+      }
+
+      function damagePlayer(text) {
+        if (hitsLeft > 1) {
+          hitsLeft -= 1;
+          state.player.invuln = 110;
+          state.player.vy = -8;
+          state.player.x = clamp(state.player.x - state.player.facing * 28, 0, getStageConfig().worldW - state.player.w);
+          vibrate(70);
+          setMessage(text || `被弾！ あと${hitsLeft}回でステージやり直し`);
+          return;
+        }
+        vibrate([100, 50, 100]);
+        restartCurrentStage(`2回被弾したので STAGE ${currentStage} の最初から`);
+      }
+
+      function toBossPhase() {
+        phase = "boss";
+        boss = createBoss();
+        isPaused = false;
+        setMessage(`STAGE ${currentStage} ボス戦！ カード画面へ切り替え`);
+        updateUI();
+        renderBossCards();
+      }
+
+      function advanceToNextStage() {
+        if (currentStage >= 2) {
+          phase = "clear";
+          isPaused = false;
+          setMessage("ステージ2クリア！ 全ステージ制覇！");
+          updateUI();
+          return;
+        }
+        currentStage += 1;
+        state = createStage();
+        boss = createBoss();
+        phase = "stage";
+        hitsLeft = MAX_HITS;
+        isPaused = false;
+        setMessage("STAGE 2 開始！ 2ヒットで最初から。敵もボスも強化済み");
+        updateUI();
+        renderBossCards();
+      }
+
+      function finishBossIfNeeded() {
+        if (!boss) return;
+        if (boss.deck.filter((c) => !c.matched).length > 0) return;
+        if (boss.playerPairs >= boss.enemyPairs) {
+          advanceToNextStage();
+        } else {
+          phase = "gameover";
+          setMessage(`STAGE ${currentStage} のボスに敗北`);
+        }
+      }
+
+      function revealToMemory(ids) {
+        ids.forEach((id) => {
+          const card = boss.deck.find((c) => c.id === id);
+          if (card) card.seen = true;
+        });
+      }
+
+      function handleCardClick(id) {
+        if (phase !== "boss" || !boss || !boss.playerTurn || boss.lock) return;
+        const card = boss.deck.find((c) => c.id === id);
+        if (!card || card.matched || card.open) return;
+        if (boss.selected.length >= 2) return;
+
+        card.open = true;
+        card.seen = true;
+        boss.selected.push(id);
+        renderBossCards();
+        updateUI();
+
+        if (boss.selected.length < 2) return;
+
+        boss.lock = true;
+        const [id1, id2] = boss.selected;
+        const c1 = boss.deck.find((c) => c.id === id1);
+        const c2 = boss.deck.find((c) => c.id === id2);
+
+        setTimeout(() => {
+          if (c1.value === c2.value) {
+            c1.matched = true;
+            c2.matched = true;
+            boss.playerPairs += 1;
+            boss.turn = "1組そろえた！ 続けてどうぞ";
+            vibrate(40);
+          } else {
+            c1.open = false;
+            c2.open = false;
+            boss.playerTurn = false;
+            boss.turn = "ボスのターン";
+          }
+          boss.selected = [];
+          boss.lock = false;
+          renderBossCards();
+          updateUI();
+          finishBossIfNeeded();
+          if (phase === "boss" && boss && !boss.playerTurn) enemyBossTurn();
+        }, 650);
+      }
+
+      function chooseBossPair() {
+        const cfg = getStageConfig();
+        const unmatched = boss.deck.filter((c) => !c.matched);
+        const seenByValue = {};
+        unmatched.forEach((card) => {
+          if (!card.seen) return;
+          if (!seenByValue[card.value]) seenByValue[card.value] = [];
+          seenByValue[card.value].push(card);
+        });
+        const guaranteed = Object.values(seenByValue).find((list) => list.length >= 2);
+        if (guaranteed && Math.random() < cfg.bossSmartChance) return guaranteed.slice(0, 2);
+        return shuffle(unmatched.filter((c) => !c.open)).slice(0, 2);
+      }
+
+      function enemyBossTurn() {
+        if (bossTimeout) clearTimeout(bossTimeout);
+        bossTimeout = setTimeout(() => {
+          if (phase !== "boss" || !boss) return;
+          const hidden = boss.deck.filter((c) => !c.matched && !c.open);
+          if (hidden.length < 2) return;
+
+          boss.lock = true;
+          boss.turn = "ボスが考え中...";
+          updateUI();
+
+          const picks = chooseBossPair();
+          if (!picks || picks.length < 2) {
+            boss.lock = false;
+            boss.playerTurn = true;
+            boss.turn = "あなたのターン";
+            updateUI();
+            return;
+          }
+
+          picks[0].open = true;
+          picks[1].open = true;
+          revealToMemory([picks[0].id, picks[1].id]);
+          renderBossCards();
+
+          setTimeout(() => {
+            const cfg = getStageConfig();
+            if (picks[0].value === picks[1].value) {
+              picks[0].matched = true;
+              picks[1].matched = true;
+              boss.enemyPairs += 1;
+              boss.turn = "ボスが1組そろえた";
+              if (!cfg.bossContinueOnMatch) boss.playerTurn = true;
+            } else {
+              picks[0].open = false;
+              picks[1].open = false;
+              boss.playerTurn = true;
+              boss.turn = "あなたのターン";
+            }
+            boss.lock = false;
+            renderBossCards();
+            updateUI();
+            finishBossIfNeeded();
+            if (phase === "boss" && boss && !boss.playerTurn) enemyBossTurn();
+          }, currentStage === 2 ? 720 : 900);
+        }, currentStage === 2 ? 650 : 850);
+      }
+
+      function updateStage() {
+        const cfg = getStageConfig();
+        const player = state.player;
+        const enemies = state.enemies;
+        const waves = state.waves;
+        const goal = state.goal;
+
+        const left = keys.left || touch.left;
+        const right = keys.right || touch.right;
+        const up = keys.up || touch.up;
+        const attack = keys.attack || touch.attack;
+
+        player.vx = 0;
+        if (left) {
+          player.vx = -PLAYER_SPEED;
+          player.facing = -1;
+        }
+        if (right) {
+          player.vx = PLAYER_SPEED;
+          player.facing = 1;
+        }
+        if (up && player.onGround) {
+          player.vy = JUMP_POWER;
+          player.onGround = false;
+        }
+        if (attack && player.attackCooldown <= 0) {
+          waves.push({
+            x: player.facing === 1 ? player.x + player.w : player.x - 10,
+            y: player.y + 12,
+            w: 18,
+            h: 16,
+            dir: player.facing,
+            life: cfg.waveLife
+          });
+          player.attackCooldown = cfg.attackCooldown;
+          vibrate(20);
+        }
+
+        player.attackCooldown = Math.max(0, player.attackCooldown - 1);
+        player.invuln = Math.max(0, player.invuln - 1);
+
+        const oldX = player.x;
+        const oldY = player.y;
+        player.x += player.vx;
+        player.x = clamp(player.x, 0, cfg.worldW - player.w);
+
+        player.vy += GRAVITY;
+        player.y += player.vy;
+        player.onGround = false;
+
+        const solids = state.platforms.slice();
+        enemies.forEach((enemy) => {
+          if (enemy.stun > 0) solids.push({ x: enemy.x, y: enemy.y + enemy.h - 8, w: enemy.w, h: 8 });
+        });
+
+        for (const s of solids) {
+          const box = { x: player.x, y: player.y, w: player.w, h: player.h };
+          if (!overlaps(box, s)) continue;
+
+          const prevBottom = oldY + player.h;
+          const nowBottom = player.y + player.h;
+          const prevRight = oldX + player.w;
+          const nowRight = player.x + player.w;
+
+          if (prevBottom <= s.y && nowBottom >= s.y) {
+            player.y = s.y - player.h;
+            player.vy = 0;
+            player.onGround = true;
+          } else if (oldY >= s.y + s.h && player.y <= s.y + s.h) {
+            player.y = s.y + s.h;
+            if (player.vy < 0) player.vy = 0;
+          } else if (prevRight <= s.x && nowRight >= s.x) {
+            player.x = s.x - player.w;
+          } else if (oldX >= s.x + s.w && player.x <= s.x + s.w) {
+            player.x = s.x + s.w;
+          }
+        }
+
+        if (player.y > VIEW_H + 120) {
+          if (hitsLeft > 1) {
+            hitsLeft -= 1;
+            state.player = createPlayer();
+            state.player.invuln = 90;
+            vibrate(70);
+            setMessage(`落下！ あと${hitsLeft}回でステージやり直し`);
+          } else {
+            vibrate([100, 50, 100]);
+            restartCurrentStage(`2回ミスしたので STAGE ${currentStage} の最初から`);
+          }
+          return;
+        }
+
+        enemies.forEach((enemy) => {
+          if (enemy.stun > 0) {
+            enemy.stun--;
+            return;
+          }
+          enemy.x += enemy.dir * enemy.speed;
+          if (enemy.x < enemy.left) {
+            enemy.x = enemy.left;
+            enemy.dir = 1;
+          }
+          if (enemy.x > enemy.right) {
+            enemy.x = enemy.right;
+            enemy.dir = -1;
+          }
+        });
+
+        for (let i = waves.length - 1; i >= 0; i--) {
+          const wave = waves[i];
+          wave.x += wave.dir * WAVE_SPEED;
+          wave.life--;
+          if (wave.life <= 0) {
+            waves.splice(i, 1);
+            continue;
+          }
+          enemies.forEach((enemy) => {
+            if (enemy.stun <= 0 && overlaps(wave, enemy)) enemy.stun = cfg.stunFrames;
+          });
+        }
+
+        for (const enemy of enemies) {
+          if (enemy.stun <= 0 && overlaps(player, enemy) && player.invuln <= 0) {
+            damagePlayer(`STAGE ${currentStage} でダメージ！`);
+            return;
+          }
+        }
+
+        if (overlaps(player, goal)) {
+          toBossPhase();
+          return;
+        }
+
+        state.cameraX = clamp(player.x - VIEW_W * 0.35, 0, cfg.worldW - VIEW_W);
+      }
+
+      function roundRect(x, y, w, h, r) {
+        ctx.beginPath();
+        ctx.moveTo(x + r, y);
+        ctx.arcTo(x + w, y, x + w, y + h, r);
+        ctx.arcTo(x + w, y + h, x, y + h, r);
+        ctx.arcTo(x, y + h, x, y, r);
+        ctx.arcTo(x, y, x + w, y, r);
+        ctx.closePath();
+      }
+
+      function drawPlatform(x, y, w, h, i, stageNo) {
+        ctx.fillStyle = stageNo === 2 ? (i % 2 === 0 ? "#6b21a8" : "#7c3aed") : (i % 2 === 0 ? "#92400e" : "#b45309");
+        roundRect(x, y, w, h, 8);
+        ctx.fill();
+        ctx.fillStyle = stageNo === 2 ? "#c4b5fd" : "#fde68a";
+        roundRect(x, y, w, Math.min(6, h), 8);
+        ctx.fill();
+      }
+
+      function drawGround() {
+        ctx.fillStyle = currentStage === 2 ? "#0f172a" : "#082f49";
+        ctx.fillRect(0, 470, VIEW_W, 70);
+        state.groundSegments.forEach((seg, i) => {
+          const x = seg.x - state.cameraX;
+          ctx.fillStyle = currentStage === 2 ? (i % 2 ? "#374151" : "#1f2937") : (i % 2 ? "#166534" : "#15803d");
+          ctx.fillRect(x, seg.y, seg.w, seg.h);
+        });
+      }
+
+      function drawMountains(cameraX) {
+        for (let i = 0; i < 7; i++) {
+          const x = i * 260 - (cameraX * 0.35) % 260;
+          ctx.fillStyle = currentStage === 2 ? (i % 2 === 0 ? "#312e81" : "#4338ca") : (i % 2 === 0 ? "#1d4ed8" : "#2563eb");
+          ctx.globalAlpha = 0.35;
+          ctx.beginPath();
+          ctx.moveTo(x, 360);
+          ctx.lineTo(x + 110, 180);
+          ctx.lineTo(x + 220, 360);
+          ctx.closePath();
+          ctx.fill();
+          ctx.globalAlpha = 1;
+        }
+      }
+
+      function drawWave(x, y, life) {
+        const pulse = 1 + (getStageConfig().waveLife - life) * 0.08;
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.scale(pulse, pulse);
+        ctx.strokeStyle = currentStage === 2 ? "#f9a8d4" : "#67e8f9";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(0, 0, 10, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(0, 0, 18, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      function drawPlayer(x, y, facing, invuln) {
+        const blink = invuln > 0 && Math.floor(frame / 5) % 2 === 0;
+        if (blink) return;
+        ctx.save();
+        ctx.translate(x + 17, y + 20);
+        ctx.scale(facing, 1);
+        ctx.fillStyle = currentStage === 2 ? "#f9a8d4" : "#fde047";
+        roundRect(-16, -18, 32, 26, 12);
+        ctx.fill();
+        ctx.fillStyle = currentStage === 2 ? "#f472b6" : "#facc15";
+        roundRect(-12, 6, 24, 12, 8);
+        ctx.fill();
+        ctx.fillStyle = "#0f172a";
+        ctx.beginPath();
+        ctx.arc(-5, -7, 3, 0, Math.PI * 2);
+        ctx.arc(7, -7, 3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#fb7185";
+        ctx.beginPath();
+        ctx.moveTo(13, -5);
+        ctx.lineTo(24, -9);
+        ctx.lineTo(19, 0);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = "#f8fafc";
+        roundRect(-6, 0, 12, 4, 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      function drawEnemy(x, y, stun) {
+        const bounce = Math.sin(frame / 10) * 1.5;
+        ctx.save();
+        ctx.translate(x, y + bounce);
+        ctx.fillStyle = stun > 0 ? "#c4b5fd" : (currentStage === 2 ? "#ef4444" : "#f97316");
+        roundRect(0, 0, 34, 34, 10);
+        ctx.fill();
+        ctx.fillStyle = "#0f172a";
+        ctx.beginPath();
+        ctx.arc(11, 12, 3, 0, Math.PI * 2);
+        ctx.arc(23, 12, 3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#fff7ed";
+        roundRect(8, 22, 18, 4, 2);
+        ctx.fill();
+        if (stun > 0) {
+          ctx.strokeStyle = currentStage === 2 ? "#f9a8d4" : "#67e8f9";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(17, -2, 8, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.arc(17, -2, 14, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+
+      function drawGoal(x, y) {
+        ctx.fillStyle = "#0f172a";
+        roundRect(x, y, 48, 75, 12);
+        ctx.fill();
+        ctx.fillStyle = currentStage === 2 ? "#f9a8d4" : "#f8fafc";
+        roundRect(x + 8, y + 10, 32, 55, 8);
+        ctx.fill();
+        ctx.fillStyle = "#f43f5e";
+        ctx.beginPath();
+        ctx.arc(x + 24, y + 37, 8, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      function drawHud() {
+        ctx.fillStyle = "rgba(2, 6, 23, 0.55)";
+        ctx.fillRect(18, 18, 380, 86);
+        ctx.strokeStyle = "rgba(255,255,255,0.12)";
+        ctx.strokeRect(18, 18, 380, 86);
+        ctx.fillStyle = "#f8fafc";
+        ctx.font = "bold 18px sans-serif";
+        ctx.fillText(`MODE: ${phaseLabel(phase)}`, 32, 44);
+        ctx.font = "16px sans-serif";
+        ctx.fillText(`HP: ${"●".repeat(Math.max(0, hitsLeft))}`, 32, 68);
+        ctx.fillStyle = currentStage === 2 ? "#f9a8d4" : "#67e8f9";
+        ctx.fillText(message, 32, 92);
+      }
+
+      function drawOverlay(title, subtitle) {
+        ctx.fillStyle = "rgba(2, 6, 23, 0.58)";
+        ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+        ctx.fillStyle = "#f8fafc";
+        ctx.font = "bold 56px sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText(title, VIEW_W / 2, VIEW_H / 2 - 20);
+        ctx.font = "22px sans-serif";
+        ctx.fillStyle = currentStage === 2 ? "#f9a8d4" : "#a5f3fc";
+        ctx.fillText(subtitle, VIEW_W / 2, VIEW_H / 2 + 28);
+        ctx.textAlign = "start";
+      }
+
+      function drawScene() {
+        ctx.clearRect(0, 0, VIEW_W, VIEW_H);
+        const sky = ctx.createLinearGradient(0, 0, 0, VIEW_H);
+        if (currentStage === 2) {
+          sky.addColorStop(0, "#12051f");
+          sky.addColorStop(1, "#312e81");
+        } else {
+          sky.addColorStop(0, "#081329");
+          sky.addColorStop(1, "#164e63");
+        }
+        ctx.fillStyle = sky;
+        ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+
+        if (!state) return;
+        const cameraX = state.cameraX;
+        state.stars.forEach((star) => {
+          const x = (star.x - cameraX * 0.2 + VIEW_W * 2) % (VIEW_W * 2) - VIEW_W * 0.5;
+          ctx.globalAlpha = 0.7;
+          ctx.fillStyle = "#dbeafe";
+          ctx.beginPath();
+          ctx.arc(x, star.y, star.r, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.globalAlpha = 1;
+        });
+
+        drawMountains(cameraX);
+        drawGround();
+        state.platforms.forEach((p, i) => drawPlatform(p.x - cameraX, p.y, p.w, p.h, i, currentStage));
+        state.waves.forEach((wave) => drawWave(wave.x - cameraX + 9, wave.y + 8, wave.life));
+        state.enemies.forEach((enemy) => drawEnemy(enemy.x - cameraX, enemy.y, enemy.stun));
+        drawGoal(state.goal.x - cameraX, state.goal.y);
+        drawPlayer(state.player.x - cameraX, state.player.y, state.player.facing, state.player.invuln);
+        drawHud();
+
+        if (isPaused && phase === "stage") drawOverlay("PAUSE", "Resumeで再開");
+        if (phase === "title") drawOverlay("WAGYAN-LIKE", "スマホ版 / Startで開始");
+        if (phase === "clear") drawOverlay("ALL CLEAR", "Resetでもう一度遊べます");
+        if (phase === "gameover") drawOverlay("GAME OVER", "Resetで再挑戦");
+      }
+
+      function loop() {
+        frame++;
+        if (phase === "stage" && !isPaused) updateStage();
+        drawScene();
+        requestAnimationFrame(loop);
+      }
+
+      function setControl(name, value) {
+        touch[name] = value;
+      }
+
+      function togglePause() {
+        if (phase !== "stage") return;
+        isPaused = !isPaused;
+        updateUI();
+      }
+
+      document.addEventListener("keydown", (e) => {
+        if (["ArrowLeft", "ArrowRight", "ArrowUp", " ", "a", "d", "w", "z", "j", "Enter", "r", "p"].includes(e.key)) e.preventDefault();
+        if (e.key === "ArrowLeft" || e.key === "a") keys.left = true;
+        if (e.key === "ArrowRight" || e.key === "d") keys.right = true;
+        if (e.key === "ArrowUp" || e.key === "w" || e.key === " ") keys.up = true;
+        if (e.key === "z" || e.key === "j") keys.attack = true;
+        if (e.key === "Enter" && phase === "title") startGame();
+        if (e.key === "r") resetAll(true);
+        if (e.key === "p") togglePause();
+      }, { passive: false });
+
+      document.addEventListener("keyup", (e) => {
+        if (e.key === "ArrowLeft" || e.key === "a") keys.left = false;
+        if (e.key === "ArrowRight" || e.key === "d") keys.right = false;
+        if (e.key === "ArrowUp" || e.key === "w" || e.key === " ") keys.up = false;
+        if (e.key === "z" || e.key === "j") keys.attack = false;
+      });
+
+      document.querySelectorAll("[data-control]").forEach((btn) => {
+        const key = btn.dataset.control;
+        const on = (ev) => { ev.preventDefault(); setControl(key, true); };
+        const off = (ev) => { ev.preventDefault(); setControl(key, false); };
+        btn.addEventListener("pointerdown", on);
+        btn.addEventListener("pointerup", off);
+        btn.addEventListener("pointerleave", off);
+        btn.addEventListener("pointercancel", off);
+      });
+
+      startBtn.addEventListener("click", startGame);
+      resetBtn.addEventListener("click", () => resetAll(true));
+      pauseBtn.addEventListener("click", togglePause);
+      fullBtn.addEventListener("click", async () => {
+        const el = document.documentElement;
+        try {
+          if (!document.fullscreenElement) {
+            if (el.requestFullscreen) await el.requestFullscreen();
+          } else if (document.exitFullscreen) {
+            await document.exitFullscreen();
+          }
+        } catch (_) {}
+      });
+
+      window.addEventListener("resize", () => {
+        updateUI();
+        renderBossCards();
+      });
+
+      resetAll(true);
+      loop();
+    })();
+  </script>
+</body>
+</html>
