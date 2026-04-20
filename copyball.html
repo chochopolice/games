@@ -29,36 +29,55 @@ window.addEventListener('keyup', e => { keys[e.code] = false; });
 function just(k){ return keys[k] && !prev[k]; }
 function saveKeys(){ Object.assign(prev, keys); Object.keys(prev).forEach(k=>{ if(!keys[k]) delete prev[k]; }); }
 
-// ── LEVEL ──────────────────────────────────────────────────────────────────
+// ── LEVEL (RANDOM GENERATION) ─────────────────────────────────────────────
 const PLATS = [];
+let collectibles = [];
+let enemySpawns = [];
+
+function randInt(min,max){ return Math.floor(Math.random()*(max-min+1))+min; }
+function pick(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+
 function gnd(x,w){ PLATS.push({x,y:420,w,h:60,g:true}); }
 function plat(x,y,w){ PLATS.push({x,y,w,h:14,g:false}); }
 
-gnd(0,900); gnd(1000,450); gnd(1560,520); gnd(2200,380); gnd(2700,480);
-gnd(3300,420); gnd(3850,760); gnd(4730,320); gnd(5170,600); gnd(5900,1100);
+function generateStageLayout(){
+  PLATS.length = 0;
+  gnd(0,900);
+  let x = 900;
+  while(x < WORLD_W - 360){
+    x += randInt(80,200);
+    let w = randInt(330,700);
+    if(x + w > WORLD_W - 260) w = WORLD_W - 260 - x;
+    if(w < 240) break;
+    gnd(x,w);
+    const rows = randInt(1,3);
+    for(let r=0;r<rows;r++){
+      const count = randInt(1,3);
+      for(let i=0;i<count;i++){
+        const pw = randInt(90,150);
+        const px = x + randInt(20, Math.max(21, w - pw - 20));
+        const py = randInt(165,345);
+        plat(px,py,pw);
+      }
+    }
+    x += w;
+  }
+  gnd(WORLD_W-260,260);
+}
 
-plat(120,330,120); plat(320,265,110); plat(500,320,120); plat(680,270,100);
-plat(850,350,130); plat(1060,265,110); plat(1220,320,120); plat(1420,250,130);
-plat(1620,310,110); plat(1820,255,130); plat(2030,310,110); plat(2260,240,120);
-plat(2450,300,110); plat(2620,235,130); plat(2820,300,110); plat(3050,250,120);
-plat(3200,175,110); plat(3400,310,130); plat(3520,205,120); plat(3720,310,120);
-plat(3920,245,110); plat(4130,310,130); plat(4340,240,110); plat(4500,165,120);
-plat(4760,320,110); plat(4920,245,130); plat(5070,320,110); plat(5250,250,120);
-plat(5500,305,130); plat(5700,240,110); plat(5870,305,130); plat(6100,240,120);
-plat(6300,300,130); plat(6550,235,120); plat(6700,310,110);
-
-// Stars (collectibles)
-const STARS_POS = [
-  150,305,  340,240,  520,295,  700,245,  870,325,
-  1080,240, 1440,225, 1640,285, 1840,230, 2280,215,
-  2470,275, 2640,210, 2840,275, 3070,225, 3220,150,
-  3440,285, 3540,180, 3740,285, 3940,220, 4150,285,
-  4360,215, 4520,140, 4780,295, 4940,220, 5090,295,
-  5270,225, 5520,280, 5720,215, 5890,280, 6120,215,
-  6320,275, 6570,210, 6720,285,
-];
-let collectibles;
-function makeCollectibles(){ collectibles = []; for(let i=0;i<STARS_POS.length;i+=2) collectibles.push({x:STARS_POS[i],y:STARS_POS[i+1],col:false}); }
+function generateCollectibles(){
+  collectibles = [];
+  for(const p of PLATS){
+    const chance = p.g ? 0.35 : 0.7;
+    if(Math.random() > chance) continue;
+    const count = p.g ? (p.w > 520 ? randInt(1,3) : randInt(0,1)) : 1;
+    for(let i=0;i<count;i++){
+      const sx = p.x + randInt(20, Math.max(21, p.w - 20));
+      const sy = p.y - (p.g ? randInt(26,44) : randInt(22,36));
+      collectibles.push({x:sx,y:sy,col:false});
+    }
+  }
+}
 
 // ── ENEMY DEFINITIONS ──────────────────────────────────────────────────────
 const EDEFS = {
@@ -70,19 +89,29 @@ const EDEFS = {
 };
 const ACOL = { fire:'#FF5500', spark:'#FFD700', sword:'#AABBFF', ice:'#00CCFF' };
 
-// ── ENEMY SPAWNS ────────────────────────────────────────────────────────────
-const ESPAWNS = [
-  ['waddle',260,395],['waddle',550,395],['hothead',920,395],['sparky',1100,395],
-  ['blade',1300,225],['waddle',1640,395],['hothead',1900,395],['chilly',2260,395],
-  ['sparky',2460,395],['blade',2720,395],['waddle',2850,395],['hothead',3060,395],
-  ['chilly',3250,395],['blade',3540,180],['waddle',3740,395],['sparky',3940,395],
-  ['hothead',4150,395],['chilly',4360,395],['blade',4600,395],['waddle',4750,395],
-  ['sparky',5080,395],['chilly',5260,395],['hothead',5510,395],['blade',5720,395],
-  ['waddle',6320,395],['hothead',6560,395],['sparky',6700,395],
-];
+function generateEnemySpawns(){
+  enemySpawns = [];
+  const pool = ['waddle','waddle','hothead','sparky','blade','chilly'];
+  for(const p of PLATS){
+    const isNearStart = p.x < 700;
+    const isNearGoal = p.x + p.w > WORLD_W - 500;
+    if(isNearStart || isNearGoal) continue;
+    const spacing = p.g ? 200 : 160;
+    const maxEnemies = Math.floor(p.w / spacing);
+    if(maxEnemies <= 0) continue;
+    const density = p.g ? 0.6 : 0.48;
+    const spawnCount = Math.min(maxEnemies, Math.random() < density ? randInt(1,maxEnemies) : 0);
+    for(let i=0;i<spawnCount;i++){
+      const t = pick(pool);
+      const x = p.x + randInt(20, Math.max(21, p.w - 20));
+      const y = p.y - 1;
+      enemySpawns.push([t,x,y]);
+    }
+  }
+}
 
 // ── STATE ──────────────────────────────────────────────────────────────────
-let frame=0, score=0, lives=3, gameState='title';
+let frame=0, score=0, lives=3, stage=1, gameState='title';
 let cam={x:0}, kirby, enemies, projs, parts;
 
 function resetK(){
@@ -97,7 +126,7 @@ function resetK(){
   };
 }
 function makeEnemies(){
-  return ESPAWNS.map(([t,x,y])=>{
+  return enemySpawns.map(([t,x,y])=>{
     const d=EDEFS[t];
     return { type:t,d, x,y:y-d.r*2, w:d.r*2,h:d.r*2, vx:-d.spd,vy:0, onGnd:false,
       facing:-1, hp:d.maxhp, alive:true, hurtT:0, inv:0,
@@ -106,10 +135,25 @@ function makeEnemies(){
       animF:0,animT:0, inhaling:false,inhP:0, frozen:0 };
   });
 }
+function buildRandomStage(){
+  generateStageLayout();
+  generateCollectibles();
+  generateEnemySpawns();
+}
 function initGame(){
-  score=0; lives=3; gameState='playing'; cam.x=0;
+  score=0; lives=3; stage=1; gameState='playing'; cam.x=0;
+  buildRandomStage();
   resetK(); enemies=makeEnemies(); projs=[]; parts=[];
-  makeCollectibles();
+}
+function nextStage(){
+  stage++;
+  score += 1000;
+  cam.x=0;
+  buildRandomStage();
+  resetK();
+  enemies=makeEnemies();
+  projs=[];
+  parts=[];
 }
 
 // ── PHYSICS ────────────────────────────────────────────────────────────────
@@ -195,7 +239,7 @@ function updateK(){
   k.state=k.inhaling&&!k.hasEnemy?'inhale':k.puffed?'float':!k.onGnd?'jump':Math.abs(k.vx)>.5?'walk':'idle';
   k.animT++; if(k.animT>=8){ k.animT=0; k.animF=(k.animF+1)%4; }
   cam.x=Math.max(0,Math.min(WORLD_W-VW,k.x-VW/2+k.w/2));
-  if(k.x>WORLD_W-160) gameState='clear';
+  if(k.x>WORLD_W-160){ nextStage(); return; }
 }
 
 function shootStar(){
@@ -578,6 +622,9 @@ function drawHUD(){
   // Score
   ctx.fillStyle='rgba(0,0,0,.32)'; rr(10,10,175,34,10); ctx.fill();
   ctx.fillStyle='#fff'; ctx.font='bold 16px sans-serif'; ctx.textBaseline='middle'; ctx.fillText(`スコア: ${score}`,20,27);
+  // Stage
+  ctx.fillStyle='rgba(0,0,0,.32)'; rr(195,10,115,34,10); ctx.fill();
+  ctx.fillStyle='#fff'; ctx.fillText(`STAGE ${stage}`,208,27);
   // Lives
   ctx.fillStyle='rgba(0,0,0,.32)'; rr(10,50,110,26,8); ctx.fill();
   for(let i=0;i<Math.max(0,lives);i++){
