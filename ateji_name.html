@@ -225,108 +225,264 @@
   </main>
 
   <script>
-    const nameDictionary = {
-      michael: {
-        katakana: "マイケル",
-        candidates: [
-          { kanji: "舞蹴", meaning: "舞＝優雅に舞う、蹴＝力強く進む。音の近さと見た目のインパクトを優先した当て字です。" },
-          { kanji: "真威蹴", meaning: "真＝まこと、威＝威厳、蹴＝前へ進む力。強めで武士風の印象です。" },
-          { kanji: "舞輝流", meaning: "舞＝しなやかさ、輝＝輝き、流＝流れるような才能。華やかな印象です。" }
-        ]
-      },
-      john: {
-        katakana: "ジョン",
-        candidates: [
-          { kanji: "丈恩", meaning: "丈＝たくましさ、恩＝思いやり。落ち着いた良い意味の当て字です。" },
-          { kanji: "常音", meaning: "常＝変わらない、音＝響き。穏やかな印象です。" }
-        ]
-      },
-      emily: {
-        katakana: "エミリー",
-        candidates: [
-          { kanji: "笑美莉", meaning: "笑＝笑顔、美＝美しさ、莉＝ジャスミン系の上品な響き。女性名向けです。" },
-          { kanji: "恵美莉", meaning: "恵＝めぐみ、美＝美しさ、莉＝可憐さ。やわらかい印象です。" }
-        ]
-      },
-      alice: {
-        katakana: "アリス",
-        candidates: [
-          { kanji: "愛莉寿", meaning: "愛＝愛情、莉＝可憐さ、寿＝長く幸せ。縁起の良い当て字です。" },
-          { kanji: "亜璃澄", meaning: "亜＝アジア的な響き、璃＝宝石、澄＝澄んだ心。透明感があります。" }
-        ]
-      },
-      david: {
-        katakana: "デイビッド",
-        candidates: [
-          { kanji: "大飛道", meaning: "大＝大きさ、飛＝飛躍、道＝信念の道。力強い印象です。" },
-          { kanji: "出威人", meaning: "出＝現れる、威＝存在感、人＝人柄。インパクト重視です。" }
-        ]
-      }
+    // ============================================================
+    // その場生成型・外国人名 → カタカナ → 漢字当て字ジェネレーター
+    // ============================================================
+    // ポイント：
+    // 1. 名前辞書に依存せず、英語名をローマ字風の音節に分解する
+    // 2. 各音節に近い漢字候補をその場で選ぶ
+    // 3. 良い意味の漢字を中心にして、毎回少し違う当て字を作る
+    // ============================================================
+
+    const kanjiBySound = {
+      a: [
+        { kanji: "愛", meaning: "愛情" },
+        { kanji: "亜", meaning: "新しい可能性" },
+        { kanji: "明", meaning: "明るさ" }
+      ],
+      i: [
+        { kanji: "威", meaning: "存在感" },
+        { kanji: "衣", meaning: "美しい装い" },
+        { kanji: "維", meaning: "つながり" }
+      ],
+      u: [
+        { kanji: "優", meaning: "やさしさ" },
+        { kanji: "悠", meaning: "ゆったりした大きさ" },
+        { kanji: "有", meaning: "才能を持つ" }
+      ],
+      e: [
+        { kanji: "恵", meaning: "めぐみ" },
+        { kanji: "英", meaning: "すぐれた才能" },
+        { kanji: "栄", meaning: "繁栄" }
+      ],
+      o: [
+        { kanji: "央", meaning: "中心に立つ" },
+        { kanji: "王", meaning: "堂々とした存在" },
+        { kanji: "桜", meaning: "美しさと品格" }
+      ],
+
+      ka: [{ kanji: "華", meaning: "華やかさ" }, { kanji: "香", meaning: "よい香り" }, { kanji: "翔", meaning: "大きく羽ばたく" }],
+      ki: [{ kanji: "輝", meaning: "輝き" }, { kanji: "希", meaning: "希望" }, { kanji: "樹", meaning: "大きく育つ" }],
+      ku: [{ kanji: "空", meaning: "広い空" }, { kanji: "久", meaning: "長く続く" }, { kanji: "玖", meaning: "美しい黒い宝石" }],
+      ke: [{ kanji: "慶", meaning: "よろこび" }, { kanji: "慧", meaning: "知恵" }, { kanji: "景", meaning: "美しい景色" }],
+      ko: [{ kanji: "光", meaning: "光" }, { kanji: "幸", meaning: "幸せ" }, { kanji: "虎", meaning: "勇ましさ" }],
+
+      sa: [{ kanji: "沙", meaning: "美しい砂浜" }, { kanji: "咲", meaning: "花が咲く" }, { kanji: "彩", meaning: "色どり" }],
+      si: [{ kanji: "志", meaning: "強い志" }, { kanji: "詩", meaning: "美しい言葉" }, { kanji: "紫", meaning: "高貴さ" }],
+      shi: [{ kanji: "志", meaning: "強い志" }, { kanji: "詩", meaning: "美しい言葉" }, { kanji: "紫", meaning: "高貴さ" }],
+      su: [{ kanji: "寿", meaning: "長寿と祝い" }, { kanji: "澄", meaning: "澄んだ心" }, { kanji: "翠", meaning: "美しい緑" }],
+      se: [{ kanji: "聖", meaning: "清らかさ" }, { kanji: "星", meaning: "星の輝き" }, { kanji: "誠", meaning: "誠実" }],
+      so: [{ kanji: "蒼", meaning: "青く広い空" }, { kanji: "想", meaning: "思いやり" }, { kanji: "颯", meaning: "さわやかさ" }],
+
+      ta: [{ kanji: "太", meaning: "大きくたくましい" }, { kanji: "多", meaning: "豊かさ" }, { kanji: "拓", meaning: "道を切り開く" }],
+      ti: [{ kanji: "知", meaning: "知性" }, { kanji: "千", meaning: "多くの可能性" }, { kanji: "智", meaning: "深い知恵" }],
+      chi: [{ kanji: "知", meaning: "知性" }, { kanji: "千", meaning: "多くの可能性" }, { kanji: "智", meaning: "深い知恵" }],
+      tu: [{ kanji: "月", meaning: "静かな美しさ" }, { kanji: "翼", meaning: "自由に羽ばたく" }, { kanji: "紬", meaning: "丁寧に紡ぐ" }],
+      tsu: [{ kanji: "月", meaning: "静かな美しさ" }, { kanji: "翼", meaning: "自由に羽ばたく" }, { kanji: "紬", meaning: "丁寧に紡ぐ" }],
+      te: [{ kanji: "天", meaning: "広い空" }, { kanji: "照", meaning: "照らす" }, { kanji: "哲", meaning: "賢さ" }],
+      to: [{ kanji: "翔", meaning: "羽ばたく" }, { kanji: "斗", meaning: "星を量る器" }, { kanji: "都", meaning: "洗練" }],
+
+      na: [{ kanji: "奈", meaning: "美しい響き" }, { kanji: "菜", meaning: "自然な生命力" }, { kanji: "凪", meaning: "穏やかさ" }],
+      ni: [{ kanji: "仁", meaning: "思いやり" }, { kanji: "二", meaning: "調和" }, { kanji: "虹", meaning: "希望の架け橋" }],
+      nu: [{ kanji: "温", meaning: "あたたかさ" }, { kanji: "縫", meaning: "結び合わせる" }, { kanji: "奴", meaning: "古風な響き" }],
+      ne: [{ kanji: "音", meaning: "響き" }, { kanji: "寧", meaning: "穏やかさ" }, { kanji: "根", meaning: "根を張る強さ" }],
+      no: [{ kanji: "乃", meaning: "やわらかな響き" }, { kanji: "野", meaning: "自然" }, { kanji: "望", meaning: "希望" }],
+
+      ha: [{ kanji: "羽", meaning: "自由" }, { kanji: "葉", meaning: "生命力" }, { kanji: "覇", meaning: "力強さ" }],
+      hi: [{ kanji: "陽", meaning: "太陽" }, { kanji: "妃", meaning: "上品さ" }, { kanji: "飛", meaning: "飛躍" }],
+      fu: [{ kanji: "風", meaning: "自由な風" }, { kanji: "富", meaning: "豊かさ" }, { kanji: "歩", meaning: "前へ進む" }],
+      he: [{ kanji: "平", meaning: "平和" }, { kanji: "兵", meaning: "勇敢さ" }, { kanji: "慧", meaning: "知恵" }],
+      ho: [{ kanji: "穂", meaning: "実り" }, { kanji: "宝", meaning: "大切なもの" }, { kanji: "帆", meaning: "前へ進む力" }],
+
+      ma: [{ kanji: "舞", meaning: "優雅に舞う" }, { kanji: "真", meaning: "まこと" }, { kanji: "磨", meaning: "磨き上げる" }],
+      mi: [{ kanji: "美", meaning: "美しさ" }, { kanji: "実", meaning: "実り" }, { kanji: "魅", meaning: "魅力" }],
+      mu: [{ kanji: "夢", meaning: "夢" }, { kanji: "武", meaning: "強さ" }, { kanji: "睦", meaning: "仲の良さ" }],
+      me: [{ kanji: "芽", meaning: "新しい芽" }, { kanji: "恵", meaning: "めぐみ" }, { kanji: "明", meaning: "明るさ" }],
+      mo: [{ kanji: "萌", meaning: "芽吹き" }, { kanji: "桃", meaning: "やわらかな魅力" }, { kanji: "望", meaning: "願い" }],
+
+      ya: [{ kanji: "也", meaning: "自然体" }, { kanji: "弥", meaning: "広がり" }, { kanji: "矢", meaning: "まっすぐ進む" }],
+      yu: [{ kanji: "優", meaning: "やさしさ" }, { kanji: "悠", meaning: "大きな余裕" }, { kanji: "結", meaning: "人との結びつき" }],
+      yo: [{ kanji: "陽", meaning: "太陽" }, { kanji: "世", meaning: "世界" }, { kanji: "誉", meaning: "名誉" }],
+
+      ra: [{ kanji: "羅", meaning: "広がる美しさ" }, { kanji: "良", meaning: "良さ" }, { kanji: "楽", meaning: "楽しさ" }],
+      ri: [{ kanji: "莉", meaning: "可憐さ" }, { kanji: "理", meaning: "知性" }, { kanji: "璃", meaning: "宝石の美しさ" }],
+      ru: [{ kanji: "琉", meaning: "美しい宝石" }, { kanji: "流", meaning: "流れる才能" }, { kanji: "瑠", meaning: "深い青の宝石" }],
+      re: [{ kanji: "怜", meaning: "賢さ" }, { kanji: "礼", meaning: "礼儀" }, { kanji: "麗", meaning: "美しさ" }],
+      ro: [{ kanji: "路", meaning: "進む道" }, { kanji: "朗", meaning: "明るさ" }, { kanji: "郎", meaning: "親しみ" }],
+
+      wa: [{ kanji: "和", meaning: "調和" }, { kanji: "環", meaning: "つながり" }, { kanji: "羽", meaning: "自由" }],
+      n: [{ kanji: "恩", meaning: "感謝" }, { kanji: "音", meaning: "響き" }, { kanji: "仁", meaning: "思いやり" }]
     };
 
-    const soundKanji = {
-      a: ["愛", "亜", "明"],
-      i: ["威", "衣", "維"],
-      u: ["優", "宇", "有"],
-      e: ["恵", "英", "栄"],
-      o: ["央", "王", "桜"],
-      ma: ["真", "舞", "磨"],
-      mi: ["美", "実", "魅"],
-      ke: ["蹴", "慧", "景"],
-      ru: ["流", "琉", "瑠"],
-      jo: ["丈", "常", "城"],
-      n: ["恩", "音", "仁"],
-      ri: ["莉", "理", "璃"],
-      su: ["寿", "澄", "須"],
-      da: ["大", "太", "駄"],
-      vi: ["美", "飛", "備"],
-      do: ["道", "土", "堂"]
+    const kanaBySound = {
+      a: "ア", i: "イ", u: "ウ", e: "エ", o: "オ",
+      ka: "カ", ki: "キ", ku: "ク", ke: "ケ", ko: "コ",
+      sa: "サ", si: "シ", shi: "シ", su: "ス", se: "セ", so: "ソ",
+      ta: "タ", ti: "チ", chi: "チ", tu: "ツ", tsu: "ツ", te: "テ", to: "ト",
+      na: "ナ", ni: "ニ", nu: "ヌ", ne: "ネ", no: "ノ",
+      ha: "ハ", hi: "ヒ", fu: "フ", hu: "フ", he: "ヘ", ho: "ホ",
+      ma: "マ", mi: "ミ", mu: "ム", me: "メ", mo: "モ",
+      ya: "ヤ", yu: "ユ", yo: "ヨ",
+      ra: "ラ", ri: "リ", ru: "ル", re: "レ", ro: "ロ",
+      wa: "ワ", n: "ン",
+      ga: "ガ", gi: "ギ", gu: "グ", ge: "ゲ", go: "ゴ",
+      za: "ザ", ji: "ジ", zu: "ズ", ze: "ゼ", zo: "ゾ",
+      da: "ダ", di: "ディ", du: "ドゥ", de: "デ", do: "ド",
+      ba: "バ", bi: "ビ", bu: "ブ", be: "ベ", bo: "ボ",
+      pa: "パ", pi: "ピ", pu: "プ", pe: "ペ", po: "ポ",
+      ja: "ジャ", ju: "ジュ", jo: "ジョ",
+      cha: "チャ", chu: "チュ", cho: "チョ",
+      sha: "シャ", shu: "シュ", sho: "ショ",
+      fa: "ファ", fi: "フィ", fe: "フェ", fo: "フォ",
+      va: "ヴァ", vi: "ヴィ", vu: "ヴ", ve: "ヴェ", vo: "ヴォ"
     };
 
-    function simpleKatakanaFromEnglish(name) {
-      const normalized = name.toLowerCase().trim();
-      const rough = normalized
-        .replace(/michael/g, "マイケル")
-        .replace(/john/g, "ジョン")
-        .replace(/emily/g, "エミリー")
-        .replace(/alice/g, "アリス")
-        .replace(/david/g, "デイビッド");
+    const specialNameSounds = {
+      michael: ["ma", "i", "ke", "ru"],
+      mike: ["ma", "i", "ku"],
+      john: ["jo", "n"],
+      emily: ["e", "mi", "ri"],
+      alice: ["a", "ri", "su"],
+      david: ["de", "i", "bi", "do"],
+      daniel: ["da", "ni", "e", "ru"],
+      james: ["je", "i", "mu", "su"],
+      william: ["wi", "ri", "a", "mu"],
+      olivia: ["o", "ri", "vi", "a"],
+      sophia: ["so", "fi", "a"],
+      emma: ["e", "ma"],
+      noah: ["no", "a"],
+      lucas: ["ru", "ka", "su"],
+      liam: ["ri", "a", "mu"],
+      ethan: ["i", "sa", "n"],
+      ava: ["e", "i", "va"],
+      mia: ["mi", "a"],
+      isabella: ["i", "za", "be", "ra"]
+    };
 
-      if (/^[ァ-ヶー]+$/.test(rough)) return rough;
-      return "カタカナ変換未登録";
+    // 追加音。日本語の完全な発音ではなく、当て字生成用に近い音へ寄せる。
+    const extraSoundMap = {
+      je: { kana: "ジェ", base: "se" },
+      wi: { kana: "ウィ", base: "ri" },
+      we: { kana: "ウェ", base: "e" },
+      wo: { kana: "ウォ", base: "o" },
+      th: { kana: "ス", base: "su" },
+      la: { kana: "ラ", base: "ra" },
+      li: { kana: "リ", base: "ri" },
+      lu: { kana: "ル", base: "ru" },
+      le: { kana: "レ", base: "re" },
+      lo: { kana: "ロ", base: "ro" },
+      va: { kana: "ヴァ", base: "ha" },
+      vi: { kana: "ヴィ", base: "bi" },
+      vu: { kana: "ヴ", base: "fu" },
+      ve: { kana: "ヴェ", base: "be" },
+      vo: { kana: "ヴォ", base: "bo" }
+    };
+
+    // 濁音・半濁音など、漢字候補は近い清音から流用する。
+    const soundFallback = {
+      ga: "ka", gi: "ki", gu: "ku", ge: "ke", go: "ko",
+      za: "sa", ji: "shi", zu: "su", ze: "se", zo: "so",
+      da: "ta", di: "ti", du: "tu", de: "te", do: "to",
+      ba: "ha", bi: "hi", bu: "fu", be: "he", bo: "ho",
+      pa: "ha", pi: "hi", pu: "fu", pe: "he", po: "ho",
+      ja: "shi", ju: "yu", jo: "yo",
+      cha: "chi", chu: "yu", cho: "yo",
+      sha: "shi", shu: "yu", sho: "yo",
+      fa: "ha", fi: "hi", fe: "he", fo: "ho",
+      wi: "ri", we: "e", wo: "o",
+      va: "ha", vi: "hi", vu: "fu", ve: "he", vo: "ho",
+      je: "se"
+    };
+
+    function normalizeName(name) {
+      return name
+        .toLowerCase()
+        .trim()
+        .replace(/[^a-z]/g, "");
     }
 
-    function fallbackKanji(name) {
-      const normalized = name.toLowerCase().trim();
-      const chunks = normalized.match(/[a-z]{1,2}/g) || [];
-      const picked = chunks.slice(0, 4).map(chunk => {
-        const list = soundKanji[chunk] || soundKanji[chunk[0]] || ["雅"];
-        return list[Math.floor(Math.random() * list.length)];
-      });
-      return {
-        kanji: picked.join("") || "雅名",
-        meaning: "辞書にない名前のため、音の雰囲気に近い漢字を自動で組み合わせています。正式版ではAIまたは音節辞書を増やすと精度が上がります。"
-      };
+    function splitIntoSounds(name) {
+      const normalized = normalizeName(name);
+      if (!normalized) return ["ma", "i"];
+      if (specialNameSounds[normalized]) return specialNameSounds[normalized];
+
+      let text = normalized;
+
+      // 英語名でありがちな語尾を日本語発音寄りに補正
+      text = text
+        .replace(/ph/g, "f")
+        .replace(/ck/g, "k")
+        .replace(/qu/g, "ku")
+        .replace(/x/g, "ks")
+        .replace(/c(?=e|i|y)/g, "s")
+        .replace(/c/g, "k")
+        .replace(/y$/g, "i")
+        .replace(/e$/g, "");
+
+      const keys = Object.keys({ ...kanaBySound, ...extraSoundMap }).sort((a, b) => b.length - a.length);
+      const sounds = [];
+      let i = 0;
+
+      while (i < text.length) {
+        let matched = null;
+
+        for (const key of keys) {
+          if (text.startsWith(key, i)) {
+            matched = key;
+            break;
+          }
+        }
+
+        if (matched) {
+          sounds.push(matched);
+          i += matched.length;
+        } else {
+          // 子音だけ残った場合は、読みやすい母音を補う
+          const ch = text[i];
+          const consonantMap = {
+            b: "bu", c: "ku", d: "do", f: "fu", g: "gu", h: "ha",
+            j: "ji", k: "ku", l: "ru", m: "mu", p: "pu", q: "ku",
+            r: "ru", s: "su", t: "to", v: "bu", w: "wa", z: "zu"
+          };
+          sounds.push(consonantMap[ch] || "a");
+          i += 1;
+        }
+      }
+
+      // 長すぎる名前は表示バランスを優先して最大5文字分程度にする
+      return sounds.slice(0, 5);
+    }
+
+    function soundToKana(sound) {
+      if (kanaBySound[sound]) return kanaBySound[sound];
+      if (extraSoundMap[sound]) return extraSoundMap[sound].kana;
+      const fallback = soundFallback[sound];
+      if (fallback && kanaBySound[fallback]) return kanaBySound[fallback];
+      return "ア";
+    }
+
+    function soundToKanjiCandidate(sound) {
+      const normalizedSound = extraSoundMap[sound]?.base || soundFallback[sound] || sound;
+      const candidates = kanjiBySound[normalizedSound] || kanjiBySound[normalizedSound[0]] || kanjiBySound.a;
+      return candidates[Math.floor(Math.random() * candidates.length)];
+    }
+
+    function generateAteji(name) {
+      const sounds = splitIntoSounds(name);
+      const kana = sounds.map(soundToKana).join("");
+      const picked = sounds.map(soundToKanjiCandidate);
+      const kanji = picked.map(item => item.kanji).join("");
+      const meaning = picked.map(item => `${item.kanji}＝${item.meaning}`).join("、") + "。音の近さと良い意味を優先して、その場で漢字を組み合わせています。";
+
+      return { kana, kanji, meaning };
     }
 
     function generate() {
       const rawName = document.getElementById("nameInput").value.trim() || "michael";
-      const key = rawName.toLowerCase();
-      const hit = nameDictionary[key];
-
-      let katakana;
-      let result;
-
-      if (hit) {
-        katakana = hit.katakana;
-        result = hit.candidates[Math.floor(Math.random() * hit.candidates.length)];
-      } else {
-        katakana = simpleKatakanaFromEnglish(rawName);
-        result = fallbackKanji(rawName);
-      }
+      const result = generateAteji(rawName);
 
       document.getElementById("inputName").textContent = rawName;
-      document.getElementById("katakanaName").textContent = katakana;
+      document.getElementById("katakanaName").textContent = result.kana;
       document.getElementById("kanjiNameSmall").textContent = result.kanji;
       document.getElementById("kanjiNameLarge").textContent = result.kanji;
       document.getElementById("meaningText").textContent = result.meaning;
