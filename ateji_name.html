@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Kanji Name Generator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Zen+Kurenaido&family=Hina+Mincho&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #f4efe6;
+      --paper: #fffaf0;
+      --ink: #111;
+      --accent: #8b1e1e;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: radial-gradient(circle at top, #fff8e8, var(--bg));
+      color: #222;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .app {
+      width: min(920px, 100%);
+      background: rgba(255, 250, 240, 0.9);
+      border: 1px solid rgba(80, 50, 20, 0.18);
+      border-radius: 24px;
+      padding: 28px;
+      box-shadow: 0 20px 60px rgba(60, 40, 20, 0.16);
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: clamp(28px, 5vw, 48px);
+      letter-spacing: 0.04em;
+    }
+
+    .lead {
+      margin: 0 0 24px;
+      color: #67543d;
+      line-height: 1.8;
+    }
+
+    .form {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      margin-bottom: 28px;
+    }
+
+    input {
+      font-size: 20px;
+      padding: 16px 18px;
+      border: 1px solid rgba(80, 50, 20, 0.22);
+      border-radius: 14px;
+      background: #fff;
+      outline: none;
+    }
+
+    input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 4px rgba(139, 30, 30, 0.12);
+    }
+
+    button {
+      font-size: 18px;
+      font-weight: 700;
+      padding: 0 22px;
+      border: none;
+      border-radius: 14px;
+      color: #fff;
+      background: var(--accent);
+      cursor: pointer;
+    }
+
+    button:hover {
+      filter: brightness(1.05);
+    }
+
+    .result-wrap {
+      display: grid;
+      grid-template-columns: 1fr 1.1fr;
+      gap: 22px;
+      align-items: stretch;
+    }
+
+    .info, .paper {
+      border-radius: 20px;
+      padding: 24px;
+    }
+
+    .info {
+      background: rgba(255, 255, 255, 0.55);
+      border: 1px solid rgba(80, 50, 20, 0.14);
+    }
+
+    .row {
+      margin-bottom: 18px;
+    }
+
+    .label {
+      font-size: 13px;
+      color: #80684a;
+      margin-bottom: 6px;
+    }
+
+    .value {
+      font-size: 28px;
+      font-weight: 800;
+    }
+
+    .paper {
+      position: relative;
+      min-height: 330px;
+      background:
+        linear-gradient(90deg, rgba(0,0,0,0.035) 1px, transparent 1px),
+        linear-gradient(180deg, rgba(0,0,0,0.035) 1px, transparent 1px),
+        var(--paper);
+      background-size: 42px 42px;
+      border: 12px solid #e7dcc6;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    .paper::before {
+      content: "";
+      position: absolute;
+      inset: 14px;
+      border: 1px solid rgba(0,0,0,0.08);
+      pointer-events: none;
+    }
+
+    .kanji {
+      writing-mode: vertical-rl;
+      font-family: "Zen Kurenaido", "Hina Mincho", "Yu Mincho", "Hiragino Mincho ProN", serif;
+      font-size: clamp(72px, 18vw, 150px);
+      line-height: 1.05;
+      letter-spacing: 0.06em;
+      color: var(--ink);
+      text-shadow:
+        1px 1px 0 rgba(0,0,0,0.08),
+        2px 4px 8px rgba(0,0,0,0.18);
+      transform: rotate(-1deg);
+    }
+
+    .seal {
+      position: absolute;
+      right: 26px;
+      bottom: 24px;
+      width: 58px;
+      height: 58px;
+      border: 3px solid var(--accent);
+      color: var(--accent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 900;
+      font-family: "Hina Mincho", serif;
+      transform: rotate(5deg);
+    }
+
+    .note {
+      margin-top: 18px;
+      font-size: 13px;
+      color: #80684a;
+      line-height: 1.7;
+    }
+
+    @media (max-width: 720px) {
+      .form, .result-wrap {
+        grid-template-columns: 1fr;
+      }
+
+      button {
+        padding: 16px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <h1>Kanji Name Generator</h1>
+    <p class="lead">外国人の名前をカタカナに変換し、意味を持たせた漢字の当て字として表示します。</p>
+
+    <div class="form">
+      <input id="nameInput" type="text" placeholder="例：michael / emily / john" autocomplete="off" />
+      <button id="generateButton">変換する</button>
+    </div>
+
+    <section class="result-wrap">
+      <div class="info">
+        <div class="row">
+          <div class="label">Input</div>
+          <div class="value" id="inputName">michael</div>
+        </div>
+        <div class="row">
+          <div class="label">Katakana</div>
+          <div class="value" id="katakanaName">マイケル</div>
+        </div>
+        <div class="row">
+          <div class="label">Kanji Ateji</div>
+          <div class="value" id="kanjiNameSmall">舞蹴</div>
+        </div>
+        <p class="note" id="meaningText">舞＝優雅に舞う、蹴＝力強く進む。音の近さと見た目のインパクトを優先した当て字です。</p>
+      </div>
+
+      <div class="paper">
+        <div class="kanji" id="kanjiNameLarge">舞蹴</div>
+        <div class="seal">名</div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const nameDictionary = {
+      michael: {
+        katakana: "マイケル",
+        candidates: [
+          { kanji: "舞蹴", meaning: "舞＝優雅に舞う、蹴＝力強く進む。音の近さと見た目のインパクトを優先した当て字です。" },
+          { kanji: "真威蹴", meaning: "真＝まこと、威＝威厳、蹴＝前へ進む力。強めで武士風の印象です。" },
+          { kanji: "舞輝流", meaning: "舞＝しなやかさ、輝＝輝き、流＝流れるような才能。華やかな印象です。" }
+        ]
+      },
+      john: {
+        katakana: "ジョン",
+        candidates: [
+          { kanji: "丈恩", meaning: "丈＝たくましさ、恩＝思いやり。落ち着いた良い意味の当て字です。" },
+          { kanji: "常音", meaning: "常＝変わらない、音＝響き。穏やかな印象です。" }
+        ]
+      },
+      emily: {
+        katakana: "エミリー",
+        candidates: [
+          { kanji: "笑美莉", meaning: "笑＝笑顔、美＝美しさ、莉＝ジャスミン系の上品な響き。女性名向けです。" },
+          { kanji: "恵美莉", meaning: "恵＝めぐみ、美＝美しさ、莉＝可憐さ。やわらかい印象です。" }
+        ]
+      },
+      alice: {
+        katakana: "アリス",
+        candidates: [
+          { kanji: "愛莉寿", meaning: "愛＝愛情、莉＝可憐さ、寿＝長く幸せ。縁起の良い当て字です。" },
+          { kanji: "亜璃澄", meaning: "亜＝アジア的な響き、璃＝宝石、澄＝澄んだ心。透明感があります。" }
+        ]
+      },
+      david: {
+        katakana: "デイビッド",
+        candidates: [
+          { kanji: "大飛道", meaning: "大＝大きさ、飛＝飛躍、道＝信念の道。力強い印象です。" },
+          { kanji: "出威人", meaning: "出＝現れる、威＝存在感、人＝人柄。インパクト重視です。" }
+        ]
+      }
+    };
+
+    const soundKanji = {
+      a: ["愛", "亜", "明"],
+      i: ["威", "衣", "維"],
+      u: ["優", "宇", "有"],
+      e: ["恵", "英", "栄"],
+      o: ["央", "王", "桜"],
+      ma: ["真", "舞", "磨"],
+      mi: ["美", "実", "魅"],
+      ke: ["蹴", "慧", "景"],
+      ru: ["流", "琉", "瑠"],
+      jo: ["丈", "常", "城"],
+      n: ["恩", "音", "仁"],
+      ri: ["莉", "理", "璃"],
+      su: ["寿", "澄", "須"],
+      da: ["大", "太", "駄"],
+      vi: ["美", "飛", "備"],
+      do: ["道", "土", "堂"]
+    };
+
+    function simpleKatakanaFromEnglish(name) {
+      const normalized = name.toLowerCase().trim();
+      const rough = normalized
+        .replace(/michael/g, "マイケル")
+        .replace(/john/g, "ジョン")
+        .replace(/emily/g, "エミリー")
+        .replace(/alice/g, "アリス")
+        .replace(/david/g, "デイビッド");
+
+      if (/^[ァ-ヶー]+$/.test(rough)) return rough;
+      return "カタカナ変換未登録";
+    }
+
+    function fallbackKanji(name) {
+      const normalized = name.toLowerCase().trim();
+      const chunks = normalized.match(/[a-z]{1,2}/g) || [];
+      const picked = chunks.slice(0, 4).map(chunk => {
+        const list = soundKanji[chunk] || soundKanji[chunk[0]] || ["雅"];
+        return list[Math.floor(Math.random() * list.length)];
+      });
+      return {
+        kanji: picked.join("") || "雅名",
+        meaning: "辞書にない名前のため、音の雰囲気に近い漢字を自動で組み合わせています。正式版ではAIまたは音節辞書を増やすと精度が上がります。"
+      };
+    }
+
+    function generate() {
+      const rawName = document.getElementById("nameInput").value.trim() || "michael";
+      const key = rawName.toLowerCase();
+      const hit = nameDictionary[key];
+
+      let katakana;
+      let result;
+
+      if (hit) {
+        katakana = hit.katakana;
+        result = hit.candidates[Math.floor(Math.random() * hit.candidates.length)];
+      } else {
+        katakana = simpleKatakanaFromEnglish(rawName);
+        result = fallbackKanji(rawName);
+      }
+
+      document.getElementById("inputName").textContent = rawName;
+      document.getElementById("katakanaName").textContent = katakana;
+      document.getElementById("kanjiNameSmall").textContent = result.kanji;
+      document.getElementById("kanjiNameLarge").textContent = result.kanji;
+      document.getElementById("meaningText").textContent = result.meaning;
+    }
+
+    document.getElementById("generateButton").addEventListener("click", generate);
+    document.getElementById("nameInput").addEventListener("keydown", event => {
+      if (event.key === "Enter") generate();
+    });
+
+    generate();
+  </script>
+</body>
+</html>
