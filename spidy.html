@@ -273,7 +273,7 @@ body.scope.scope-hit #reticle{background:linear-gradient(var(--go),var(--go)) ce
       <span><kbd>Q</kbd> 滑空（長押し）</span>
       <span><kbd>C</kbd> 受け身</span>
       <span><kbd>M</kbd> 地図</span>
-      <span><kbd>R</kbd> 近くの屋上へ</span>
+      <span><kbd>R</kbd> 近くの屋上へ（戦闘中は不可）</span>
       <span><kbd>Esc</kbd> 一時停止</span>
     </div>
   </div>
@@ -379,7 +379,7 @@ body.scope.scope-hit #reticle{background:linear-gradient(var(--go),var(--go)) ce
       <button class="ghost" id="stage-btn" type="button">ステージ選択へ</button>
     </div>
     <div id="pause-ms"></div>
-    <p class="note">M：地図　R：近くの屋上へ移動　V：サウンド切替</p>
+    <p class="note">M：地図　R：近くの屋上へ移動（戦闘ミッション中は不可）　V：サウンド切替</p>
   </div>
 </section>
 
@@ -4234,20 +4234,14 @@ function tkShibuya() {
   tkPeds();
 }
 function tkPeds() {
-  const p = new Parts(13);
-  p.box(-0.1, 0, 0, 0.16, 0.82, 0.2, 0x2a2d33); p.box(0.1, 0, 0, 0.16, 0.82, 0.2, 0x2a2d33);
-  p.box(0, 0.8, 0, 0.46, 0.64, 0.26, 0xffffff);
-  p.box(0, 1.46, 0, 0.26, 0.28, 0.26, 0xe3bf9a); p.box(0, 1.7, -0.02, 0.28, 0.1, 0.3, 0x241e1a);
-  const N = 150, mesh = new THREE.InstancedMesh(p.mesh(MAT_VEH).geometry, MAT_VEH, N);
-  mesh.frustumCulled = false;
-  const tints = [0x1e1e22, 0x2b3a5a, 0xd9cdb4, 0xf2f2f0, 0x8a8f96, 0xb8323a, 0x5a6a3a, 0x7a5a3e, 0x3a6aa0, 0xe8b8c8], c = new THREE.Color();
+  const N = 150;
   const corners = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
   const spot = (ci, rnd) => { const [sx, sz] = corners[ci], along = rnd() < 0.5; const a = 1 + rnd() * (along ? 5 : 2.5), b = 1 + rnd() * (along ? 2.5 : 5); return [SCX + sx * (9 + a), SCZ + sz * (9 + b)]; };
   const peds = [];
   for (let i = 0; i < N; i++) {
     const ci = i % 4, [x, z] = spot(ci, R);
-    peds.push({ ci, x, z, ax: x, az: z, bx: x, bz: z, t0: -99, dur: 0, cyc: -1, sp: rand(3.2, 4.2), yaw: rand(0, 6.28), ph: R() * 6 });
-    c.set(pick(tints)); mesh.setColorAt(i, c);
+    const q = { ci, x, z, ax: x, az: z, bx: x, bz: z, t0: -99, dur: 0, cyc: -1, sp: rand(3.0, 3.8), yaw: rand(0, 6.28), ph: R() * 6, moving: false };
+    peds.push(q); PED_EXTRA.push(q); R();                     // (keeps the city's random sequence unchanged)
   }
   const upd = (dt, t) => {
     const cyc = Math.floor(t / 38), tin = (((t % 38) + 38) % 38) - 24;
@@ -4262,13 +4256,11 @@ function tkPeds() {
       if (t >= q.t0 && t < q.t0 + q.dur) {
         const u = (t - q.t0) / q.dur; q.x = lerp(q.ax, q.bx, u); q.z = lerp(q.az, q.bz, u); q.yaw = Math.atan2(q.bx - q.ax, q.bz - q.az); moving = true;
       } else if (q.dur > 0 && t >= q.t0 + q.dur) { q.x = q.bx; q.z = q.bz; }
-      const bob = moving ? Math.abs(Math.sin((t + q.ph) * 9)) * 0.08 : 0;
-      _q.setFromAxisAngle(_v1.set(0, 1, 0), q.yaw);
-      _m4.compose(_v2.set(q.x, 0.02 + bob, q.z), _q, _v3.set(1, 1, 1)); mesh.setMatrixAt(i, _m4);
+      q.moving = moving;
+      if (q.ped && q.ped.st === 'walk') { q.ped.spd = moving ? q.sp : 0; q.ped.amp = moving ? 0.62 : 0; q.ped.pose = moving ? 0 : 3; }
     }
-    mesh.instanceMatrix.needsUpdate = true;
   };
-  upd(0, 0); TICKS.push(upd); WORLD.add(mesh);
+  upd(0, 0); TICKS.push(upd);
 }
 function tkLaneSignal(lane, half, red) {
   const s = [], P = lane.path; let inside = false;
@@ -5039,29 +5031,12 @@ Object.assign(VT.yama, { hq: vkYamanote });
 Object.assign(VT.shkH, { hq: () => vkShinkansen(true) });
 Object.assign(VT.shkM, { hq: () => vkShinkansen(false) });
 Object.assign(VT.yakata, { hq: vkYakata });
-/* ---------- hero: model, input, swing physics, collisions, damage, camera ---------- */
-const P = {
-  pos: new V3(), vel: new V3(), state: 'ground', hp: 100, iframe: 0, lastHit: -99,
-  anchor: null, rope: 0, side: 1, sinceRelease: 9, wall: null, wallCD: 0, pressT: 0,
-  zipTo: new V3(), zipN: new V3(), zipC: null, zipT: 0, rollBuf: 0, rollT: 0,
-  ride: null, floorY: 0, impactH: 0, touchWall: null, yawFace: 0, runPhase: 0, downT: 0, glide: false
-};
-const SPAWN = new V3(), CAM = { yaw: Math.PI, pitch: -0.18, dist: 6.5, fov: 72, shake: 0 };
-const camF = new V3(0, 0, -1), camR = new V3(1, 0, 0), camDir = new V3(0, 0, -1);
-let CLOCK = 0;
-
-/* hero model: an original courier-style web runner — navy suit, safety-orange gear, cyan visor.
-   Smooth lathe/capsule body parts; the rig keeps the same joints (torso, arms, legs) the animation drives. */
-const hero = new THREE.Group(), rig = new THREE.Group();
-hero.add(rig); rig.position.y = 0.95; scene.add(hero);
-const MH = {
-  suit: new THREE.MeshPhongMaterial({ color: 0x1d2b45, specular: 0x2c3a58, shininess: 34 }),
-  dark: new THREE.MeshPhongMaterial({ color: 0x15181d, specular: 0x262a30, shininess: 22 }),
-  orange: new THREE.MeshPhongMaterial({ color: 0xff6b1a, specular: 0x553322, shininess: 48 }),
-  visor: new THREE.MeshPhongMaterial({ color: 0x3fd8ee, emissive: 0x168a9e, specular: 0xffffff, shininess: 120 }),
-  web: new THREE.MeshBasicMaterial({ color: 0xf2f6fa })
-};
-const heroMesh = (geo, mat, parent, x, y, z) => { const m = new THREE.Mesh(geo, mat); m.position.set(x || 0, y || 0, z || 0); m.castShadow = true; m.receiveShadow = true; parent.add(m); return m; };
+/* =====================================================================
+   HERO SUIT — armoured web-runner: navy hex-weave bodysuit, crimson armour plates,
+   gold trim, amber goggle visor, chest ring, twin web-fluid canisters on the back.
+   Every part is merged per joint and per material (few draw calls, lots of detail).
+   The rig keeps the same joints the animation drives: rig → torso → head / arms, rig → legs.
+   ===================================================================== */
 const latheGeo = (pts, seg) => new THREE.LatheGeometry(pts.map(([r, y]) => new THREE.Vector2(r, y)), seg || 18);
 function capsuleGeo(r0, r1, len, seg) {            // top radius r0 at y = 0, bottom radius r1 at y = -len, rounded ends
   const pts = [];
@@ -5069,61 +5044,317 @@ function capsuleGeo(r0, r1, len, seg) {            // top radius r0 at y = 0, bo
   for (let k = 0; k <= 5; k++) { const a = (k / 5) * (Math.PI / 2); pts.push([Math.max(0.0001, r0 * Math.cos(a)), 0.9 * r0 * Math.sin(a)]); }
   return latheGeo(pts, seg || 16);
 }
+function profR(prof, y) {                           // radius of a lathe profile (bottom → top) at height y
+  if (y <= prof[0][1]) return prof[0][0];
+  for (let i = 1; i < prof.length; i++) {
+    const [r1, y1] = prof[i], [r0, y0] = prof[i - 1];
+    if (y <= y1) return r0 + (r1 - r0) * ((y - y0) / Math.max(1e-6, y1 - y0));
+  }
+  return prof[prof.length - 1][0];
+}
+/* body surface from a lathe profile with UVs in metres / 0.2 (so the weave has the same size everywhere) */
+function bodyGeo(prof, seg, sx, sz) {
+  const g = latheGeo(prof, seg); g.scale(sx || 1, 1, sz || 1);
+  const r = Math.max(...prof.map((p) => p[0])), len = prof[prof.length - 1][1] - prof[0][1], uv = g.attributes.uv;
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * (2 * Math.PI * r) / 0.2, uv.getY(i) * len / 0.2);
+  return g;
+}
+/* an armour plate that hugs a lathe surface: angle range a0..a1 (0 = front, + toward +x), edges yb(u)/yt(u),
+   pushed out by off, with thickness th and crisp rims */
+function shellGeo(o) {
+  const { prof, a0, a1 } = o, sx = o.sx || 1, sz = o.sz || 1, off = o.off === undefined ? 0.006 : o.off, th = o.th === undefined ? 0.008 : o.th;
+  const nu = o.nu || 24, nv = o.nv || 8, cx = o.cx || 0, cz = o.cz || 0;
+  const yb = typeof o.yb === 'function' ? o.yb : () => o.yb, yt = typeof o.yt === 'function' ? o.yt : () => o.yt, bul = o.bulge || (() => 0);
+  const pos = [], uv = [], idx = [];
+  const P = (u, v, d) => { const a = a0 + (a1 - a0) * u, y = yb(u) + (yt(u) - yb(u)) * v, r = profR(prof, y) + off + bul(u, v) + d; return [cx + Math.sin(a) * r * sx, y, cz + Math.cos(a) * r * sz]; };
+  const vtx = (p, u, v) => { pos.push(p[0], p[1], p[2]); uv.push(u, v); return pos.length / 3 - 1; };
+  const tri = (a, b, c, hint) => {                // keep every face pointing away from the plate's inside
+    const A = pos.slice(a * 3, a * 3 + 3), B = pos.slice(b * 3, b * 3 + 3), C = pos.slice(c * 3, c * 3 + 3);
+    const ux = B[0] - A[0], uy = B[1] - A[1], uz = B[2] - A[2], vx = C[0] - A[0], vy = C[1] - A[1], vz = C[2] - A[2];
+    const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+    if (nx * hint[0] + ny * hint[1] + nz * hint[2] < 0) idx.push(a, c, b); else idx.push(a, b, c);
+  };
+  const surf = (d, out) => {
+    const base = pos.length / 3;
+    for (let j = 0; j <= nv; j++) for (let i = 0; i <= nu; i++) vtx(P(i / nu, j / nv, d), i / nu, j / nv);
+    for (let j = 0; j < nv; j++) for (let i = 0; i < nu; i++) {
+      const a = base + j * (nu + 1) + i, b = a + 1, c = a + nu + 1, e = c + 1;
+      const am = a0 + (a1 - a0) * ((i + 0.5) / nu), h = [Math.sin(am) * sx * out, 0, Math.cos(am) * sz * out];
+      tri(a, b, c, h); tri(b, e, c, h);
+    }
+  };
+  surf(0, 1); if (th > 0) surf(-th, -1);
+  if (th > 0) {
+    const rim = (pts, hintFn) => {               // strip between outer and inner along an edge
+      const base = pos.length / 3;
+      for (const [u, v] of pts) { vtx(P(u, v, 0), u, 0); vtx(P(u, v, -th), u, 1); }
+      for (let k = 0; k < pts.length - 1; k++) { const a = base + k * 2, h = hintFn(pts[k][0], pts[k][1]); tri(a, a + 2, a + 1, h); tri(a + 2, a + 3, a + 1, h); }
+    };
+    const du = (u, v, s) => { const p0 = P(Math.max(0, u - 0.01), v, 0), p1 = P(Math.min(1, u + 0.01), v, 0); return [(p1[0] - p0[0]) * s, (p1[1] - p0[1]) * s, (p1[2] - p0[2]) * s]; };
+    const dv = (u, v, s) => { const p0 = P(u, Math.max(0, v - 0.01), 0), p1 = P(u, Math.min(1, v + 0.01), 0); return [(p1[0] - p0[0]) * s, (p1[1] - p0[1]) * s, (p1[2] - p0[2]) * s]; };
+    const row = (v) => Array.from({ length: nu + 1 }, (_, i) => [i / nu, v]), col = (u) => Array.from({ length: nv + 1 }, (_, j) => [u, j / nv]);
+    rim(row(0), (u, v) => dv(u, v, -1)); rim(row(1), (u, v) => dv(u, v, 1));
+    if (Math.abs(a1 - a0) < Math.PI * 2 - 1e-3) { rim(col(0), (u, v) => du(u, v, -1)); rim(col(1), (u, v) => du(u, v, 1)); }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(idx); g.computeVertexNormals();
+  return g;
+}
+function rboxGeo(w, h, d, r, seg) {                 // rounded box with smooth normals
+  const g = new THREE.BoxGeometry(w, h, d, seg || 4, seg || 4, seg || 4), p = g.attributes.position, n = g.attributes.normal, v = new V3(), c = new V3();
+  const hx = w / 2 - r, hy = h / 2 - r, hz = d / 2 - r;
+  for (let i = 0; i < p.count; i++) {
+    v.fromBufferAttribute(p, i); c.set(clamp(v.x, -hx, hx), clamp(v.y, -hy, hy), clamp(v.z, -hz, hz));
+    v.sub(c).normalize(); n.setXYZ(i, v.x, v.y, v.z); v.multiplyScalar(r).add(c); p.setXYZ(i, v.x, v.y, v.z);
+  }
+  return g;
+}
+function tubeGeo(pts, r, seg) { return new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts.map((p) => new V3(p[0], p[1], p[2]))), seg || 24, r, 7, false); }
+/* collects parts per joint, merges them per material */
+class SuitKit {
+  constructor() { this.items = []; }
+  add(geo, mat, x, y, z, rx, ry, rz, sx, sy, sz) {
+    const m = new THREE.Matrix4().compose(new V3(x || 0, y || 0, z || 0), new THREE.Quaternion().setFromEuler(new THREE.Euler(rx || 0, ry || 0, rz || 0)), new V3(sx || 1, sy === undefined ? sx || 1 : sy, sz === undefined ? sx || 1 : sz));
+    this.items.push({ geo, mat, m }); return this;
+  }
+  build(parent) {
+    const by = new Map();
+    for (const it of this.items) { if (!by.has(it.mat)) by.set(it.mat, []); by.get(it.mat).push(it); }
+    for (const [mat, list] of by) {
+      const parts = list.map((it) => { let g = it.geo.index ? it.geo.toNonIndexed() : it.geo.clone(); g.applyMatrix4(it.m); if (!g.attributes.uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2)); return g; });
+      let n = 0; for (const g of parts) n += g.attributes.position.count;
+      const P = new Float32Array(n * 3), N = new Float32Array(n * 3), U = new Float32Array(n * 2);
+      let o = 0;
+      for (const g of parts) { P.set(g.attributes.position.array, o * 3); N.set(g.attributes.normal.array, o * 3); U.set(g.attributes.uv.array, o * 2); o += g.attributes.position.count; g.dispose(); }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(P, 3)); geo.setAttribute('normal', new THREE.BufferAttribute(N, 3)); geo.setAttribute('uv', new THREE.BufferAttribute(U, 2));
+      const mesh = new THREE.Mesh(geo, mat); mesh.castShadow = true; mesh.receiveShadow = true; parent.add(mesh);
+    }
+    this.items = [];
+  }
+}
+
+/* ---------- materials ---------- */
+function suitWeaveTex() {                           // fine hexagon weave as a normal map (drawn once)
+  if (typeof document === 'undefined' || !document.createElement) return null;
+  const S = 256, cv = document.createElement('canvas'); cv.width = cv.height = S;
+  const g = cv.getContext && cv.getContext('2d'); if (!g || !g.getImageData) return null;
+  const W = 16, Hr = S / 18, h = new Float32Array(S * S);
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    let d1 = 1e9, d2 = 1e9;
+    const j0 = Math.floor(y / Hr);
+    for (let j = j0 - 1; j <= j0 + 1; j++) {
+      const off = (((j % 2) + 2) % 2) * W / 2, i0 = Math.floor((x - off) / W);
+      for (let i = i0 - 1; i <= i0 + 1; i++) {
+        const cx = i * W + off + W / 2, cy = j * Hr + Hr / 2, d = Math.hypot(x - cx, y - cy);
+        if (d < d1) { d2 = d1; d1 = d; } else if (d < d2) d2 = d;
+      }
+    }
+    const e = clamp((d2 - d1) / 2.2, 0, 1);
+    h[y * S + x] = e * e * (3 - 2 * e) * (1 - 0.15 * (d1 / W));
+  }
+  const img = g.createImageData(S, S), A = img.data, at = (x, y) => h[((y + S) % S) * S + ((x + S) % S)];
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const dx = (at(x + 1, y) - at(x - 1, y)) * 1.6, dy = (at(x, y + 1) - at(x, y - 1)) * 1.6, L = Math.hypot(dx, dy, 1), o = (y * S + x) * 4;
+    A[o] = (-dx / L * 0.5 + 0.5) * 255; A[o + 1] = (dy / L * 0.5 + 0.5) * 255; A[o + 2] = (1 / L * 0.5 + 0.5) * 255; A[o + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4;
+  return t;
+}
+const SUIT_WEAVE = suitWeaveTex();
+const MH = {
+  suit: new THREE.MeshStandardMaterial({ color: 0x1b2742, roughness: 0.58, metalness: 0.18, normalMap: SUIT_WEAVE, normalScale: new THREE.Vector2(0.55, 0.55) }),
+  glove: new THREE.MeshStandardMaterial({ color: 0x1a2030, roughness: 0.5, metalness: 0.25, normalMap: SUIT_WEAVE, normalScale: new THREE.Vector2(0.4, 0.4) }),
+  armor: new THREE.MeshPhysicalMaterial({ color: 0x1f2d4c, roughness: 0.3, metalness: 0.45, clearcoat: 0.8, clearcoatRoughness: 0.2 }),
+  red: new THREE.MeshPhysicalMaterial({ color: 0x7c1b22, roughness: 0.32, metalness: 0.38, clearcoat: 0.85, clearcoatRoughness: 0.18 }),
+  gold: new THREE.MeshStandardMaterial({ color: 0xd2aa55, roughness: 0.26, metalness: 1.0 }),
+  metal: new THREE.MeshStandardMaterial({ color: 0x6a7079, roughness: 0.3, metalness: 0.9 }),
+  plate: new THREE.MeshPhysicalMaterial({ color: 0x3b4049, roughness: 0.34, metalness: 0.7, clearcoat: 0.5, clearcoatRoughness: 0.3 }),
+  dark: new THREE.MeshStandardMaterial({ color: 0x111419, roughness: 0.7, metalness: 0.2 }),
+  visor: new THREE.MeshPhysicalMaterial({ color: 0xa8701c, roughness: 0.06, metalness: 0.95, clearcoat: 1, clearcoatRoughness: 0.03, emissive: 0x1e0e00 }),
+  lens: new THREE.MeshPhysicalMaterial({ color: 0x0d1118, roughness: 0.15, metalness: 0.6, clearcoat: 1, emissive: 0x000000 }),
+  web: new THREE.MeshBasicMaterial({ color: 0xf2f6fa })
+};
+MH.orange = MH.red;
+for (const k in MH) MH[k].userData.keep = true;
+const hero = new THREE.Group(), rig = new THREE.Group();
+hero.add(rig); rig.position.y = 0.95; scene.add(hero);
+
+/* ---------- body shapes (all profiles bottom → top) ---------- */
+const TORSO_P = [[0.001, -0.035], [0.15, -0.02], [0.166, 0.06], [0.152, 0.16], [0.156, 0.25], [0.192, 0.35], [0.236, 0.44], [0.25, 0.5], [0.238, 0.56], [0.195, 0.61], [0.11, 0.65], [0.001, 0.67]];
+const TSX = 1.0, TSZ = 0.6;
+const PELV_P = [[0.001, -0.07], [0.15, -0.045], [0.172, 0.04], [0.163, 0.15], [0.001, 0.16]];
+const HELM_P = [[0.001, -0.165], [0.06, -0.162], [0.1, -0.142], [0.128, -0.1], [0.143, -0.04], [0.149, 0.02], [0.144, 0.07], [0.126, 0.115], [0.092, 0.15], [0.046, 0.168], [0.001, 0.173]];
+const HSX = 0.92, HSZ = 1.06;
+const UARM_P = [[0.001, -0.3], [0.055, -0.292], [0.062, -0.255], [0.068, -0.18], [0.075, -0.1], [0.079, -0.03], [0.071, 0.02], [0.045, 0.05], [0.001, 0.06]];
+const FARM_P = [[0.001, -0.285], [0.044, -0.278], [0.047, -0.25], [0.055, -0.17], [0.062, -0.09], [0.06, -0.02], [0.052, 0.02], [0.001, 0.045]];
+const THIGH_P = [[0.001, -0.465], [0.064, -0.45], [0.07, -0.39], [0.082, -0.27], [0.09, -0.15], [0.092, -0.05], [0.084, 0.01], [0.05, 0.045], [0.001, 0.055]];
+const SHIN_P = [[0.001, -0.44], [0.046, -0.43], [0.049, -0.38], [0.056, -0.28], [0.066, -0.16], [0.066, -0.07], [0.06, -0.01], [0.05, 0.03], [0.001, 0.045]];
+const D2R = Math.PI / 180, absU = (u) => Math.abs(2 * u - 1);
+const gauss = (x, s) => Math.exp(-(x * x) / (2 * s * s));
+
 const torso = new THREE.Group(); rig.add(torso);
 {
-  const body = heroMesh(latheGeo([[0.001, -0.03], [0.15, 0.0], [0.17, 0.08], [0.153, 0.2], [0.172, 0.3], [0.222, 0.43], [0.232, 0.51], [0.196, 0.59], [0.1, 0.655], [0.001, 0.675]], 24), MH.suit, torso);
-  body.scale.set(1, 1, 0.64);
-  const shorts = heroMesh(latheGeo([[0.001, -0.04], [0.155, -0.01], [0.174, 0.08], [0.16, 0.17], [0.001, 0.18]], 22), MH.dark, torso);
-  shorts.scale.set(1.02, 1, 0.66);
-  const belt = heroMesh(new THREE.TorusGeometry(0.164, 0.022, 8, 28).rotateX(Math.PI / 2), MH.orange, torso, 0, 0.19, 0);
-  belt.scale.set(1, 0.64, 1);
-  heroMesh(new THREE.BoxGeometry(0.07, 0.05, 0.03), MH.orange, torso, 0, 0.19, 0.105);
-  for (const s of [-1, 1]) {                                        // harness straps crossing the chest
-    const strap = heroMesh(new THREE.BoxGeometry(0.045, 0.5, 0.02), MH.orange, torso, s * 0.06, 0.4, 0.142);
-    strap.rotation.z = s * 0.42;
-    const back = heroMesh(new THREE.BoxGeometry(0.045, 0.5, 0.02), MH.orange, torso, s * 0.06, 0.4, -0.142);
-    back.rotation.z = -s * 0.42;
+  const K = new SuitKit();
+  K.add(bodyGeo(TORSO_P, 40, TSX, TSZ), MH.suit);
+  K.add(bodyGeo(PELV_P, 36, 1.02, 0.66), MH.suit);
+  const T = { prof: TORSO_P, sx: TSX, sz: TSZ };
+  /* crimson chest plate: V-shaped lower edge, sculpted pecs */
+  const pecs = (u, v) => 0.024 * (gauss(u - 0.37, 0.085) + gauss(u - 0.63, 0.085)) * gauss(v - 0.52, 0.26) - 0.006 * gauss(u - 0.5, 0.025);
+  K.add(shellGeo({ ...T, a0: -100 * D2R, a1: 100 * D2R, yb: (u) => 0.395 - 0.08 * (1 - absU(u)), yt: (u) => 0.6 - 0.03 * absU(u), off: 0.01, th: 0.012, nu: 48, nv: 14, bulge: pecs }), MH.red);
+  /* gold trim along the chest plate's lower V */
+  K.add(shellGeo({ ...T, a0: -100 * D2R, a1: 100 * D2R, yb: (u) => 0.381 - 0.08 * (1 - absU(u)), yt: (u) => 0.395 - 0.08 * (1 - absU(u)), off: 0.012, th: 0.006, nu: 48, nv: 1 }), MH.gold);
+  /* gunmetal ribbed abdomen */
+  for (const [a, b] of [[-38, -3.5], [3.5, 38]]) for (const [y0, y1] of [[0.255, 0.312], [0.188, 0.244], [0.12, 0.177]]) {
+    K.add(shellGeo({ ...T, a0: a * D2R, a1: b * D2R, yb: y0, yt: y1, off: 0.008, th: 0.01, nu: 10, nv: 3, bulge: (u, v) => 0.004 * Math.sin(v * Math.PI) }), MH.plate);
   }
-  heroMesh(new THREE.OctahedronGeometry(0.055, 0), MH.orange, torso, 0, 0.44, 0.15).scale.set(1, 1.3, 0.35);
-  const pack = heroMesh(capsuleGeo(0.085, 0.085, 0.2, 14), MH.dark, torso, 0.1, 0.42, -0.17);
-  pack.rotation.z = Math.PI / 2;
-  for (const s of [-1, 1]) heroMesh(new THREE.CylinderGeometry(0.035, 0.035, 0.16, 12), MH.orange, torso, s * 0.06, 0.44, -0.24);
-  heroMesh(new THREE.CylinderGeometry(0.055, 0.065, 0.09, 14), MH.suit, torso, 0, 0.7, 0);
+  K.add(shellGeo({ ...T, a0: -16 * D2R, a1: 16 * D2R, yb: 0.312, yt: (u) => 0.33 - 0.0 * u, off: 0.009, th: 0.008, nu: 8, nv: 2 }), MH.plate);
+  K.add(shellGeo({ ...T, a0: -4.5 * D2R, a1: 4.5 * D2R, yb: 0.33, yt: 0.43, off: 0.019, th: 0.008, nu: 3, nv: 6 }), MH.plate);
+  K.add(shellGeo({ ...T, a0: -4.5 * D2R, a1: 4.5 * D2R, yb: 0.52, yt: 0.6, off: 0.019, th: 0.008, nu: 3, nv: 6 }), MH.plate);
+  /* side armour over the ribs, lower back panels, back plate */
+  for (const s of [-1, 1]) {
+    K.add(shellGeo({ ...T, a0: s > 0 ? 100 * D2R : -125 * D2R, a1: s > 0 ? 125 * D2R : -100 * D2R, yb: 0.26, yt: 0.52, off: 0.008, th: 0.01, nu: 8, nv: 8 }), MH.armor);
+    K.add(shellGeo({ ...T, a0: s > 0 ? 150 * D2R : 186 * D2R, a1: s > 0 ? 174 * D2R : 210 * D2R, yb: 0.12, yt: (u) => 0.29 + 0.04 * (s > 0 ? u : 1 - u), off: 0.008, th: 0.01, nu: 8, nv: 6 }), MH.red);
+  }
+  K.add(shellGeo({ ...T, a0: 125 * D2R, a1: 235 * D2R, yb: (u) => 0.33 + 0.05 * absU(u), yt: 0.6, off: 0.01, th: 0.012, nu: 30, nv: 10 }), MH.armor);
+  /* chest ring emblem + web piping radiating from it */
+  const ringY = 0.475, ringZ = profR(TORSO_P, ringY) * TSZ + 0.022 + pecs(0.5, 0.5);
+  K.add(new THREE.TorusGeometry(0.043, 0.0105, 16, 48), MH.metal, 0, ringY, ringZ + 0.004);
+  K.add(new THREE.TorusGeometry(0.03, 0.004, 10, 40), MH.gold, 0, ringY, ringZ + 0.006);
+  K.add(new THREE.CylinderGeometry(0.034, 0.036, 0.012, 40), MH.lens, 0, ringY, ringZ, Math.PI / 2);
+  const onChest = (a, y, d) => { const r = profR(TORSO_P, y) + 0.022 + d; return [Math.sin(a) * r * TSX, y, Math.cos(a) * r * TSZ]; };
+  for (const s of [-1, 1]) {
+    const lines = [[[0.2, 0.5], [0.45, 0.545], [0.75, 0.575], [1.05, 0.585]], [[0.24, 0.45], [0.55, 0.43], [0.9, 0.4], [1.2, 0.37]], [[0.16, 0.44], [0.3, 0.39], [0.42, 0.355]]];
+    for (const L of lines) K.add(tubeGeo(L.map(([a, y]) => onChest(s * a, y, 0.004)), 0.0048, 20), MH.metal);
+  }
+  /* collar and neck */
+  K.add(latheGeo([[0.11, 0.6], [0.122, 0.63], [0.105, 0.665], [0.075, 0.68], [0.068, 0.69]], 36).scale(1, 1, 0.8), MH.armor);
+  K.add(new THREE.TorusGeometry(0.104, 0.007, 8, 40), MH.gold, 0, 0.663, 0, Math.PI / 2, 0, 0, 1, 0.8, 1);
+  K.add(bodyGeo([[0.062, 0.66], [0.058, 0.72], [0.056, 0.78], [0.001, 0.79]], 24), MH.suit);
+  /* gold V on the hips, crimson hip panels */
+  const PV = { prof: PELV_P, sx: 1.02, sz: 0.66 };
+  K.add(shellGeo({ ...PV, a0: -72 * D2R, a1: 72 * D2R, yb: (u) => 0.0 + 0.11 * absU(u), yt: (u) => 0.018 + 0.11 * absU(u), off: 0.006, th: 0.006, nu: 30, nv: 1 }), MH.gold);
+  for (const s of [-1, 1]) K.add(shellGeo({ ...PV, a0: s > 0 ? 74 * D2R : -118 * D2R, a1: s > 0 ? 118 * D2R : -74 * D2R, yb: -0.04, yt: 0.13, off: 0.006, th: 0.008, nu: 8, nv: 6 }), MH.red);
+  /* back: gold spine plates, two web-fluid canisters, hoses wrapping to the ribs */
+  const backZ = (y) => -(profR(TORSO_P, y) * TSZ + 0.022);
+  for (const [y, w] of [[0.565, 0.085], [0.505, 0.078], [0.445, 0.07], [0.385, 0.06]]) K.add(rboxGeo(w, 0.048, 0.024, 0.008, 3), MH.gold, 0, y, backZ(y) - 0.004, 0.1);
+  K.add(rboxGeo(0.026, 0.25, 0.022, 0.008, 3), MH.plate, 0, 0.45, backZ(0.45) - 0.018, 0.08);
+  for (const s of [-1, 1]) {
+    const cx = s * 0.112, cy = 0.49, cz = backZ(0.49) - 0.05;
+    K.add(new THREE.CylinderGeometry(0.047, 0.047, 0.15, 32), MH.metal, cx, cy, cz, 0, 0, Math.PI / 2);
+    for (const e of [-1, 1]) { K.add(new THREE.CylinderGeometry(0.051, 0.051, 0.016, 32), MH.gold, cx + e * 0.07, cy, cz, 0, 0, Math.PI / 2); K.add(new THREE.SphereGeometry(0.046, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2), MH.metal, cx + e * 0.078, cy, cz, 0, 0, -e * Math.PI / 2, 1, 0.45, 1); }
+    for (const e of [-0.03, 0, 0.03]) K.add(new THREE.TorusGeometry(0.048, 0.004, 6, 32), MH.dark, cx + e, cy, cz, 0, Math.PI / 2, 0);
+    K.add(rboxGeo(0.06, 0.07, 0.05, 0.012, 3), MH.plate, cx * 0.55, cy - 0.005, cz + 0.03);
+    K.add(tubeGeo([[cx + s * 0.085, cy, cz], [s * 0.235, 0.47, -0.12], [s * 0.25, 0.41, -0.03], [s * 0.225, 0.37, 0.06]], 0.0095, 26), MH.dark);
+    K.add(tubeGeo([[cx + s * 0.085, cy - 0.02, cz], [s * 0.215, 0.42, -0.14], [s * 0.21, 0.32, -0.09], [s * 0.195, 0.26, 0.0]], 0.007, 26), MH.dark);
+  }
+  K.build(torso);
 }
 const head = new THREE.Group(); head.position.set(0, 0.84, 0); torso.add(head);
 {
-  heroMesh(new THREE.SphereGeometry(0.142, 28, 20), MH.suit, head).scale.set(0.95, 1.1, 1.02);
-  const visor = heroMesh(new THREE.SphereGeometry(0.146, 28, 10, Math.PI / 2 - 0.95, 1.9, 1.08, 0.5), MH.visor, head);
-  visor.scale.set(0.95, 1.1, 1.02);
-  for (const s of [-1, 1]) heroMesh(new THREE.CylinderGeometry(0.035, 0.035, 0.03, 14).rotateZ(Math.PI / 2), MH.orange, head, s * 0.135, 0.0, 0.0);
-  heroMesh(new THREE.TorusGeometry(0.12, 0.012, 6, 24, Math.PI).rotateY(Math.PI / 2), MH.orange, head, 0, 0.02, 0).rotation.z = Math.PI / 2;
+  const K = new SuitKit(), H = { prof: HELM_P, sx: HSX, sz: HSZ };
+  K.add(bodyGeo(HELM_P, 48, HSX, HSZ), MH.armor);
+  /* face plate with a sculpted jaw, crimson cheek panels, gold crest */
+  K.add(shellGeo({ ...H, a0: -64 * D2R, a1: 64 * D2R, yb: -0.162, yt: (u) => -0.022 - 0.012 * (1 - absU(u)), off: 0.004, th: 0.008, nu: 32, nv: 10, bulge: (u, v) => 0.012 * (1 - absU(u)) * Math.sin(v * Math.PI * 0.9) }), MH.armor);
+  for (const s of [-1, 1]) {
+    K.add(shellGeo({ ...H, a0: s > 0 ? 60 * D2R : -128 * D2R, a1: s > 0 ? 128 * D2R : -60 * D2R, yb: (u) => -0.09 + 0.02 * (s > 0 ? u : 1 - u), yt: (u) => 0.1 - 0.03 * (s > 0 ? u : 1 - u), off: 0.005, th: 0.007, nu: 16, nv: 10 }), MH.red);
+    K.add(new THREE.CylinderGeometry(0.036, 0.036, 0.022, 32), MH.metal, s * (0.148 * HSX + 0.012), 0.0, -0.01, 0, 0, Math.PI / 2);
+    K.add(new THREE.TorusGeometry(0.036, 0.005, 8, 32), MH.gold, s * (0.148 * HSX + 0.023), 0.0, -0.01, 0, Math.PI / 2, 0);
+    K.add(new THREE.CylinderGeometry(0.016, 0.016, 0.01, 20), MH.dark, s * (0.148 * HSX + 0.025), 0.0, -0.01, 0, 0, Math.PI / 2);
+    K.add(shellGeo({ ...H, a0: s > 0 ? 3 * D2R : -9 * D2R, a1: s > 0 ? 9 * D2R : -3 * D2R, yb: 0.06, yt: 0.172, off: 0.004, th: 0.005, nu: 2, nv: 10 }), MH.gold);
+  }
+  K.add(shellGeo({ ...H, a0: -7 * D2R, a1: 7 * D2R, yb: 0.06, yt: 0.172, off: 0.006, th: 0.006, nu: 3, nv: 10 }), MH.red);
+  K.add(shellGeo({ ...H, a0: 172 * D2R, a1: 188 * D2R, yb: -0.12, yt: 0.172, off: 0.005, th: 0.006, nu: 3, nv: 14 }), MH.gold);
+  /* amber goggle visor in a gold frame, nose bridge between the lenses */
+  const vb = (u) => { const a = absU(u); return -0.03 + 0.016 * gauss(a, 0.09) + 0.014 * a * a; }, vt = (u) => { const a = absU(u); return 0.058 - 0.008 * gauss(a, 0.12) - 0.02 * a * a; };
+  K.add(shellGeo({ ...H, a0: -74 * D2R, a1: 74 * D2R, yb: vb, yt: vt, off: 0.008, th: 0.006, nu: 40, nv: 6, bulge: (u, v) => 0.006 * Math.sin(v * Math.PI) }), MH.visor);
+  K.add(shellGeo({ ...H, a0: -76 * D2R, a1: 76 * D2R, yb: (u) => vt(u), yt: (u) => vt(u) + 0.009, off: 0.01, th: 0.006, nu: 40, nv: 1 }), MH.gold);
+  K.add(shellGeo({ ...H, a0: -76 * D2R, a1: 76 * D2R, yb: (u) => vb(u) - 0.007, yt: (u) => vb(u), off: 0.01, th: 0.006, nu: 40, nv: 1 }), MH.armor);
+  K.add(shellGeo({ ...H, a0: -4 * D2R, a1: 4 * D2R, yb: (u) => vb(0.5) - 0.006, yt: (u) => vt(0.5) + 0.004, off: 0.017, th: 0.008, nu: 2, nv: 4 }), MH.armor);
+  /* mouth vents */
+  for (const x of [-0.03, -0.015, 0, 0.015, 0.03]) K.add(rboxGeo(0.006, 0.04, 0.012, 0.0025, 2), MH.dark, x, -0.1, profR(HELM_P, -0.1) * HSZ + 0.012 + 0.012 * (1 - Math.abs(x) * 10), -0.12);
+  K.build(head);
 }
 const head0 = head;
-function limb(x, y, len, w, matA, matB, parent, kind) {
-  const piv = new THREE.Group(); piv.position.set(x, y, 0); parent.add(piv);
-  const r0 = w * 0.52, r1 = w * 0.42;
-  heroMesh(capsuleGeo(r0, r1, len, 16), matA, piv);
-  const low = new THREE.Group(); low.position.y = -len; piv.add(low);
-  heroMesh(capsuleGeo(r1 * 0.98, r1 * 0.8, len * 0.95, 16), matA, low);
-  let end;
-  if (kind === 'arm') {
-    heroMesh(new THREE.SphereGeometry(r0 * 1.35, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2), MH.orange, piv, 0, -0.005, 0);   // shoulder pad
-    heroMesh(new THREE.CylinderGeometry(r1 * 0.95, r1 * 0.95, 0.07, 14), MH.orange, low, 0, -len * 0.82, 0);                // web shooter
-    end = heroMesh(new THREE.SphereGeometry(0.06, 16, 12), MH.orange, low, 0, -len * 0.98, 0.012);
-    end.scale.set(0.82, 1.2, 0.7);
-  } else {
-    heroMesh(new THREE.SphereGeometry(r1 * 1.15, 14, 10), MH.orange, low, 0, 0.0, r1 * 0.35).scale.set(1, 0.8, 0.7);       // knee pad
-    end = new THREE.Group(); end.position.set(0, -len * 0.95 - 0.04, 0); low.add(end);
-    heroMesh(capsuleGeo(0.056, 0.06, 0.07, 14), MH.orange, end, 0, 0.05, 0);
-    heroMesh(new THREE.SphereGeometry(0.065, 16, 10), MH.orange, end, 0, -0.035, 0.055).scale.set(0.9, 0.55, 1.6);
-    heroMesh(new THREE.BoxGeometry(0.11, 0.025, 0.22), MH.dark, end, 0, -0.068, 0.045);
-  }
+
+/* ---------- limbs ---------- */
+function heroArm(s) {
+  const piv = new THREE.Group(); piv.position.set(s * 0.282, 0.6, 0); torso.add(piv);
+  const low = new THREE.Group(); low.position.y = -0.29; piv.add(low);
+  const end = new THREE.Group(); end.position.set(0, -0.272, 0.004); low.add(end);
+  const out = s * 90 * D2R;
+  let K = new SuitKit();
+  K.add(bodyGeo(UARM_P, 28), MH.suit);
+  K.add(shellGeo({ prof: UARM_P, a0: out - 62 * D2R, a1: out + 62 * D2R, yb: -0.235, yt: (u) => -0.06 + 0.02 * Math.cos((u - 0.5) * Math.PI), off: 0.006, th: 0.009, nu: 20, nv: 10, bulge: (u, v) => 0.006 * Math.sin(v * Math.PI) }), MH.red);
+  K.add(shellGeo({ prof: UARM_P, a0: 0, a1: Math.PI * 2, yb: -0.268, yt: -0.252, off: 0.008, th: 0.006, nu: 32, nv: 1 }), MH.gold);
+  /* shoulder armour: navy dome, gold rim, crimson stripe */
+  const DOME_P = Array.from({ length: 9 }, (_, k) => { const a = (k / 8) * Math.PI * 0.5; return [Math.max(0.0005, 0.108 * Math.cos(a)), 0.078 * Math.sin(a)]; });
+  K.add(latheGeo(DOME_P, 32), MH.armor, s * 0.012, -0.01, 0, 0, 0, s * -0.18, 1, 1, 1.06);
+  K.add(new THREE.TorusGeometry(0.107, 0.008, 10, 44), MH.gold, s * 0.012, -0.01, 0, Math.PI / 2, 0, s * -0.18, 1, 1.06, 1);
+  K.add(shellGeo({ prof: DOME_P, a0: out - 30 * D2R, a1: out + 30 * D2R, yb: 0.005, yt: 0.06, off: 0.003, th: 0.005, nu: 10, nv: 6 }), MH.red, s * 0.012, -0.01, 0, 0, 0, s * -0.18, 1, 1, 1.06);
+  K.build(piv);
+  K = new SuitKit();
+  K.add(bodyGeo(FARM_P, 28), MH.suit);
+  /* gauntlet with gold bands and a crimson fin along the outside of the forearm */
+  K.add(shellGeo({ prof: FARM_P, a0: 0, a1: Math.PI * 2, yb: -0.245, yt: -0.07, off: 0.007, th: 0.008, nu: 36, nv: 8 }), MH.armor);
+  for (const [a, b] of [[-0.26, -0.243], [-0.085, -0.068]]) K.add(shellGeo({ prof: FARM_P, a0: 0, a1: Math.PI * 2, yb: a, yt: b, off: 0.011, th: 0.006, nu: 36, nv: 1 }), MH.gold);
+  const fin = new THREE.Shape(); fin.moveTo(0, -0.075); fin.lineTo(0.012, -0.09); fin.quadraticCurveTo(0.026, -0.15, 0.022, -0.215); fin.lineTo(0.006, -0.246); fin.lineTo(0, -0.244);
+  const fg = new THREE.ExtrudeGeometry(fin, { depth: 0.006, bevelEnabled: true, bevelThickness: 0.0025, bevelSize: 0.002, bevelSegments: 2, curveSegments: 6 }); fg.translate(0, 0, -0.003);
+  K.add(fg, MH.red, s * 0.058, 0, 0, 0, 0, 0, s, 1, 1);
+  K.add(new THREE.CylinderGeometry(0.011, 0.013, 0.03, 16), MH.metal, -s * 0.05, -0.232, 0.012, 0, 0, Math.PI / 2);
+  K.build(low);
+  /* armoured fist */
+  K = new SuitKit();
+  K.add(rboxGeo(0.086, 0.1, 0.088, 0.024, 4), MH.glove, 0, -0.055, 0.004);
+  K.add(rboxGeo(0.09, 0.026, 0.074, 0.01, 3), MH.plate, 0, -0.098, 0.01);
+  for (let i = 0; i < 4; i++) K.add(new THREE.SphereGeometry(0.0115, 12, 8), MH.metal, -0.03 + i * 0.02, -0.11, 0.03);
+  K.add(capsuleGeo(0.017, 0.015, 0.05, 12), MH.glove, -s * 0.038, -0.03, 0.04, 0.5, 0, s * 0.35);
+  K.add(latheGeo([[0.05, -0.012], [0.052, 0.0], [0.05, 0.012]], 32), MH.gold, 0, 0.0, 0.0);
+  K.build(end);
   return { piv, low, end };
 }
-const armL = limb(-0.27, 0.6, 0.29, 0.125, MH.suit, MH.orange, torso, 'arm');
-const armR = limb(0.27, 0.6, 0.29, 0.125, MH.suit, MH.orange, torso, 'arm');
-const legL = limb(-0.1, 0.02, 0.44, 0.165, MH.suit, MH.orange, rig, 'leg');
-const legR = limb(0.1, 0.02, 0.44, 0.165, MH.suit, MH.orange, rig, 'leg');
+function heroLeg(s) {
+  const piv = new THREE.Group(); piv.position.set(s * 0.1, 0.02, 0); rig.add(piv);
+  const low = new THREE.Group(); low.position.y = -0.44; piv.add(low);
+  const end = new THREE.Group(); end.position.set(0, -0.437, 0); low.add(end);
+  const out = s * 90 * D2R, TH = { prof: THIGH_P, sz: 1.06 };
+  let K = new SuitKit();
+  K.add(bodyGeo(THIGH_P, 32, 1, 1.06), MH.suit);
+  /* crimson thigh armour (front-outer) with a gold hem */
+  const a0 = s > 0 ? -28 * D2R : -112 * D2R, a1 = s > 0 ? 112 * D2R : 28 * D2R, hem = (u) => -0.37 + 0.06 * (s > 0 ? u : 1 - u);
+  K.add(shellGeo({ ...TH, a0, a1, yb: hem, yt: (u) => -0.07 + 0.03 * (s > 0 ? u : 1 - u), off: 0.007, th: 0.01, nu: 28, nv: 12, bulge: (u, v) => 0.008 * Math.sin(v * Math.PI) * Math.sin(u * Math.PI) }), MH.red);
+  K.add(shellGeo({ ...TH, a0, a1, yb: (u) => hem(u) - 0.016, yt: hem, off: 0.009, th: 0.006, nu: 28, nv: 1 }), MH.gold);
+  K.add(shellGeo({ ...TH, a0: 145 * D2R, a1: 215 * D2R, yb: -0.34, yt: -0.12, off: 0.006, th: 0.008, nu: 10, nv: 6 }), MH.armor);
+  K.build(piv);
+  K = new SuitKit();
+  const SH = { prof: SHIN_P, sz: 1.08 };
+  K.add(bodyGeo(SHIN_P, 32, 1, 1.08), MH.suit);
+  /* knee: crimson cap with gold rims */
+  K.add(shellGeo({ ...SH, a0: -66 * D2R, a1: 66 * D2R, yb: -0.075, yt: 0.05, off: 0.012, th: 0.012, nu: 24, nv: 10, bulge: (u, v) => 0.014 * Math.sin(u * Math.PI) * Math.sin(v * Math.PI) }), MH.red);
+  K.add(shellGeo({ ...SH, a0: -70 * D2R, a1: 70 * D2R, yb: -0.092, yt: -0.075, off: 0.014, th: 0.006, nu: 24, nv: 1 }), MH.gold);
+  K.add(shellGeo({ ...SH, a0: -70 * D2R, a1: 70 * D2R, yb: 0.05, yt: 0.062, off: 0.012, th: 0.006, nu: 24, nv: 1 }), MH.gold);
+  /* shin guard with a gold chevron, crimson stripes and calf */
+  K.add(shellGeo({ ...SH, a0: -82 * D2R, a1: 82 * D2R, yb: -0.375, yt: -0.095, off: 0.007, th: 0.009, nu: 26, nv: 12 }), MH.armor);
+  K.add(shellGeo({ ...SH, a0: -62 * D2R, a1: 62 * D2R, yb: (u) => -0.235 + 0.07 * absU(u), yt: (u) => -0.218 + 0.07 * absU(u), off: 0.01, th: 0.006, nu: 24, nv: 1 }), MH.gold);
+  for (const e of [-1, 1]) K.add(shellGeo({ ...SH, a0: e > 0 ? 84 * D2R : -112 * D2R, a1: e > 0 ? 112 * D2R : -84 * D2R, yb: -0.33, yt: -0.1, off: 0.006, th: 0.007, nu: 6, nv: 8 }), MH.red);
+  K.add(shellGeo({ ...SH, a0: 145 * D2R, a1: 215 * D2R, yb: -0.3, yt: -0.11, off: 0.006, th: 0.008, nu: 12, nv: 8 }), MH.red);
+  K.build(low);
+  /* boot */
+  K = new SuitKit();
+  K.add(latheGeo([[0.054, -0.03], [0.06, 0.0], [0.058, 0.04], [0.05, 0.06]], 28), MH.armor, 0, 0.02, 0);
+  K.add(new THREE.TorusGeometry(0.058, 0.006, 8, 32), MH.gold, 0, 0.03, 0, Math.PI / 2);
+  K.add(rboxGeo(0.104, 0.075, 0.25, 0.03, 4), MH.armor, 0, -0.032, 0.048);
+  K.add(rboxGeo(0.108, 0.05, 0.085, 0.022, 4), MH.red, 0, -0.044, 0.142);
+  K.add(rboxGeo(0.104, 0.062, 0.06, 0.02, 3), MH.red, 0, -0.03, -0.06);
+  K.add(rboxGeo(0.112, 0.022, 0.27, 0.008, 3), MH.dark, 0, -0.072, 0.05);
+  K.add(rboxGeo(0.11, 0.012, 0.03, 0.005, 2), MH.gold, 0, -0.004, 0.09, 0.35);
+  K.build(end);
+  return { piv, low, end };
+}
+const armL = heroArm(-1), armR = heroArm(1), legL = heroLeg(-1), legR = heroLeg(1);
+
 /* web wings: membranes between wrist, hip and ankle, rebuilt from the joints every frame while gliding */
 const wingGeo = new THREE.BufferGeometry();
 wingGeo.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(36), 3));
@@ -5141,11 +5372,49 @@ function updateWings() {
   }
   wingGeo.attributes.position.needsUpdate = true;
 }
-function heroLook(night) {
-  MH.suit.emissive.setHex(night ? 0x16223c : 0x000000);
-  MH.dark.emissive.setHex(night ? 0x0b0c10 : 0x000000);
-  MH.orange.emissive.setHex(night ? 0x8a3200 : 0x000000);
+/* reflections: a small studio/sky environment baked per stage (day sky or night city glow) */
+let HERO_ENV = null;
+function heroEnv(night) {
+  try {
+    if (typeof THREE.PMREMGenerator !== 'function' || !renderer || !renderer.getContext) return null;
+    const sc = new THREE.Scene(), g = new THREE.SphereGeometry(40, 32, 16), cols = [], p = g.attributes.position, c = new THREE.Color();
+    const top = new THREE.Color(night ? 0x141c33 : 0x8db8f0), hor = new THREE.Color(night ? 0x3a2f46 : 0xf2dcc0), bot = new THREE.Color(night ? 0x07080c : 0x3b3630);
+    for (let i = 0; i < p.count; i++) { const y = p.getY(i) / 40; c.copy(hor).lerp(y > 0 ? top : bot, Math.min(1, Math.abs(y) * (y > 0 ? 1.4 : 3))); cols.push(c.r, c.g, c.b); }
+    g.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
+    sc.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide })));
+    const panel = (col, x, y, z, w, h) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: col, side: THREE.DoubleSide })); m.position.set(x, y, z); m.lookAt(0, 0, 0); sc.add(m); };
+    if (night) { panel(0xff4fa0, 25, 6, 18, 14, 8); panel(0x40d8ff, -24, 8, -16, 14, 8); panel(0xffc070, 0, 10, -30, 22, 6); }
+    else { panel(0xffffff, 20, 26, 14, 26, 14); panel(0xfff0dd, -26, 12, -10, 18, 10); }
+    const pm = new THREE.PMREMGenerator(renderer), rt = pm.fromScene(sc, 0.04);
+    pm.dispose(); g.dispose();
+    return rt;
+  } catch (e) { return null; }
 }
+function heroLook(night) {
+  if (HERO_ENV) HERO_ENV.dispose();
+  HERO_ENV = heroEnv(night);
+  for (const k in MH) {
+    const m = MH[k]; if (!m.isMeshStandardMaterial) continue;
+    m.envMap = HERO_ENV ? HERO_ENV.texture : null; m.envMapIntensity = night ? 0.75 : 1.0; m.needsUpdate = true;
+  }
+  MH.suit.emissive.setHex(night ? 0x0c1428 : 0x000000);
+  MH.armor.emissive.setHex(night ? 0x0a1222 : 0x000000);
+  MH.red.emissive.setHex(night ? 0x2a0508 : 0x000000);
+  MH.visor.emissive.setHex(night ? 0x7a4600 : 0x1e0e00);
+  MH.lens.emissive.setHex(night ? 0x3a2a10 : 0x000000);
+}
+/* ---------- hero: model, input, swing physics, collisions, damage, camera ---------- */
+const P = {
+  pos: new V3(), vel: new V3(), state: 'ground', hp: 100, iframe: 0, lastHit: -99,
+  anchor: null, rope: 0, side: 1, sinceRelease: 9, wall: null, wallCD: 0, pressT: 0,
+  zipTo: new V3(), zipN: new V3(), zipC: null, zipT: 0, rollBuf: 0, rollT: 0,
+  ride: null, floorY: 0, impactH: 0, touchWall: null, yawFace: 0, runPhase: 0, downT: 0, glide: false
+};
+const SPAWN = new V3(), CAM = { yaw: Math.PI, pitch: -0.18, dist: 6.5, fov: 72, shake: 0 };
+const camF = new V3(0, 0, -1), camR = new V3(1, 0, 0), camDir = new V3(0, 0, -1);
+let CLOCK = 0;
+
+/* hero model, materials, rig joints and heroLook(): see hero_suit.js */
 
 /* web line (a thin strand plus a 1px line so it stays visible far away), anchor marker, landing shadow */
 const webGeo = new THREE.BufferGeometry(); webGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
@@ -5282,7 +5551,7 @@ function enterWater() {
   if (P.state === 'water') return;
   P.state = 'water'; P.anchor = null; P.ride = null;
   P.vel.multiplyScalar(0.15); P.vel.y = 0; P.pos.y = WATER_Y - 1.15;
-  toast('水に落ちた', 'ウェブジップか岸へ泳いで脱出（R で近くの屋上へ）');
+  toast('水に落ちた', MS.cur && MS.cur.combat ? 'ウェブジップか岸へ泳いで脱出' : 'ウェブジップか岸へ泳いで脱出（R で近くの屋上へ）');
   sfx('splash');
 }
 function land(src) {
@@ -5583,6 +5852,7 @@ function updateCamera(dt) {
 
 /* ---------- hero pose ---------- */
 const _qT = new THREE.Quaternion(), _bx = new V3(), _by = new V3(), _bz = new V3();
+const HERO_EX0 = { zL: 0, zR: 0, yL: 0, yR: 0, lzL: 0, lzR: 0, drop: 0, headY: 0, snap: 0 };
 function updateHero(dt) {
   const p = P.pos, v = P.vel, hv = Math.hypot(v.x, v.z);
   hero.position.set(p.x, p.y, p.z);
@@ -5635,19 +5905,22 @@ function updateHero(dt) {
   else if (P.glide) { aL = aR = 0; eL = eR = 0; lL = lR = 0.08; kL = kR = 0.05; }
   else { aL = -2.2; aR = -2.0; eL = eR = -0.4; lL = 0.5; lR = -0.2; kL = 1.0; kR = 0.6; }
   if (P.state === 'air' && !P.glide) { const f = Math.sin(t * 6.0); aL += f * 0.25; aR -= f * 0.25; lL += f * 0.18; lR -= f * 0.18; headX = clamp(v.y * 0.01, -0.3, 0.3); }
+  let ex = HERO_EX0;
   if (MS.pose && P.state !== 'down') {                  // mission / combat poses (punch, kick, web shot, carrying, photo)
-    const o = { aL, aR, eL, eR, lL, lR, kL, kR, lean, twist, roll, headX };
-    if (MS.pose(o, dt)) ({ aL, aR, eL, eR, lL, lR, kL, kR, lean, twist, roll, headX } = o);
+    const o = { aL, aR, eL, eR, lL, lR, kL, kR, lean, twist, roll, headX, zL: 0, zR: 0, yL: 0, yR: 0, lzL: 0, lzR: 0, drop: 0, headY: 0, snap: 0 };
+    if (MS.pose(o, dt)) { ({ aL, aR, eL, eR, lL, lR, kL, kR, lean, twist, roll, headX } = o); ex = o; }
   }
-  const kk = 1 - Math.exp(-14 * dt);
+  const kk = 1 - Math.exp(-(ex.snap ? 34 : 14) * dt);
   torso.rotation.x += (lean - torso.rotation.x) * kk; torso.rotation.y += (twist - torso.rotation.y) * kk; torso.rotation.z += (roll - torso.rotation.z) * kk * 0.5;
-  head.rotation.x += (headX - head.rotation.x) * kk;
-  rig.position.y += (0.95 + bob - rig.position.y) * kk;
+  head.rotation.x += (headX - head.rotation.x) * kk; head.rotation.y += ((ex.headY || 0) - head.rotation.y) * kk;
+  rig.position.y += (0.95 + bob + (ex.drop || 0) - rig.position.y) * kk;
   armL.piv.rotation.x += (aL - armL.piv.rotation.x) * kk; armR.piv.rotation.x += (aR - armR.piv.rotation.x) * kk;
   armL.low.rotation.x += (eL - armL.low.rotation.x) * kk; armR.low.rotation.x += (eR - armR.low.rotation.x) * kk;
-  const spread = P.glide ? 1.45 : 0.12, legSpread = P.glide ? 0.22 : 0;
-  armL.piv.rotation.z += (-spread - armL.piv.rotation.z) * kk; armR.piv.rotation.z += (spread - armR.piv.rotation.z) * kk;
-  legL.piv.rotation.z += (-legSpread - legL.piv.rotation.z) * kk; legR.piv.rotation.z += (legSpread - legR.piv.rotation.z) * kk;
+  const spread = P.glide ? 1.45 : 0.16, legSpread = P.glide ? 0.22 : 0.02;
+  /* z: arm/leg out to the side (+ = outward on both sides), y: shoulder roll (+ = forearm toward the centre line) */
+  armL.piv.rotation.z += (-(spread + (ex.zL || 0)) - armL.piv.rotation.z) * kk; armR.piv.rotation.z += (spread + (ex.zR || 0) - armR.piv.rotation.z) * kk;
+  armL.piv.rotation.y += ((ex.yL || 0) - armL.piv.rotation.y) * kk; armR.piv.rotation.y += (-(ex.yR || 0) - armR.piv.rotation.y) * kk;
+  legL.piv.rotation.z += (-(legSpread + (ex.lzL || 0)) - legL.piv.rotation.z) * kk; legR.piv.rotation.z += (legSpread + (ex.lzR || 0) - legR.piv.rotation.z) * kk;
   wings.visible = P.glide && Math.abs(armL.piv.rotation.z) > 1.1;
   if (wings.visible) updateWings();
   legL.piv.rotation.x += (-lL - legL.piv.rotation.x) * kk; legR.piv.rotation.x += (-lR - legR.piv.rotation.x) * kk;
@@ -5877,6 +6150,11 @@ function dudeAnim(d, mode, spd, dt) {
     case 'cheer': o.aL = o.aR = -2.9 + Math.sin(t * 7) * 0.15; o.eL = o.eR = -0.2; break;
     case 'carried': o.lL = o.lR = 1.3; o.kL = o.kR = 1.4; o.aL = -0.9; o.aR = -1.6; o.eL = o.eR = -0.9; o.ry = 0.55; break;
     case 'cower': o.aL = o.aR = -2.2; o.eL = o.eR = -2.0; o.lean = 0.4; o.kL = o.kR = 0.6; o.lL = o.lR = 0.5; o.ry = 0.78; break;
+    case 'slamUp': o.aL = o.aR = -2.95; o.eL = o.eR = -0.55; o.lean = -0.22; o.kL = o.kR = 0.25; o.lL = 0.2; o.lR = -0.15; break;
+    case 'slamDown': o.aL = o.aR = -1.05; o.eL = o.eR = -0.1; o.lean = 0.6; o.kL = o.kR = 0.75; o.lL = o.lR = 0.55; o.ry = 0.74; break;
+    case 'lunge': o.aR = -1.5; o.eR = 0; o.aL = -1.25; o.eL = -0.25; o.lean = 0.45; o.twist = -0.2; o.lL = 0.95; o.lR = -0.65; o.kL = 0.45; o.kR = 0.1; o.ry = 0.82; break;
+    case 'charge': o.aL = o.aR = -0.55; o.eL = o.eR = -1.5; o.lean = 0.55; o.twist = 0.3; break;
+    case 'spin': o.aR = -1.45; o.eR = -0.1; o.aL = -1.2; o.eL = -0.6; o.lean = 0.12; o.kL = o.kR = 0.4; o.lL = 0.3; o.lR = -0.3; o.ry = 0.86; break;
     default: break;
   }
   const k = dt > 0 ? 1 - Math.exp(-13 * dt) : 1, R = (g, ax, v) => { g.rotation[ax] += (v - g.rotation[ax]) * k; };
@@ -5928,13 +6206,45 @@ function shotsUpdate(dt) {
 /* ---------- hero combat: E combo, F web / net ---------- */
 const CB = { k: -1, t: 0, dur: 0, yaw: 0, done: null, once: false, queued: false, lastK: -1, lastEnd: -9, webDown: false, webT: 0, shootT: 0, lockT: 0, lock: null };
 const ATK = [
-  { dur: 0.3, hit: 0.11, range: 1.9, cos: 0.55, dmg: 1, knock: 4, name: 'パンチ' },
-  { dur: 0.38, hit: 0.15, range: 2.3, cos: 0.5, dmg: 1, knock: 6, name: 'キック' },
-  { dur: 0.6, hit: 0.14, hitEnd: 0.46, range: 3.0, cos: -2, dmg: 2, knock: 12, name: '回し蹴り' }
+  { dur: 0.34, hit: 0.14, range: 2.0, cos: 0.55, dmg: 1, knock: 4, name: 'パンチ' },
+  { dur: 0.5, hit: 0.23, range: 2.6, cos: 0.45, dmg: 1, knock: 7, name: 'キック' },
+  { dur: 0.62, hit: 0.2, hitEnd: 0.46, range: 3.0, cos: -2, dmg: 2, knock: 12, name: '回し蹴り' }
 ];
+/* fighting stance: left foot forward, fists up (left at the chin, right by the jaw), shoulders turned */
+const STANCE = { aL: -0.78, eL: -2.3, yL: 0.55, zL: -0.06, aR: -0.62, eR: -2.2, yR: 0.5, zR: -0.04, lL: 0.38, kL: 0.5, lR: -0.3, kR: 0.34, lzL: 0.04, lzR: 0.1,
+  lean: 0.12, twist: -0.3, roll: 0, drop: -0.07, headX: -0.06, headY: 0.26 };
+const ATK_KEYS = [
+  [ /* straight right: load at the jaw → hips and shoulder drive through → full extension → back to guard */
+    [0, {}], [0.2, { aR: -0.5, eR: -2.35, twist: -0.12, drop: -0.09, lean: 0.08 }],
+    [0.42, { aR: -1.6, eR: -0.03, yR: 0.12, zR: -0.14, twist: -0.66, lean: 0.25, lL: 0.56, kL: 0.64, lR: -0.52, kR: 0.1, drop: -0.11, headY: 0.58, aL: -0.86, eL: -2.4 }],
+    [0.6, { aR: -1.56, eR: -0.08, yR: 0.12, zR: -0.12, twist: -0.6, lean: 0.23, lL: 0.56, kL: 0.62, lR: -0.5, kR: 0.12, drop: -0.11, headY: 0.54 }],
+    [1, {}]],
+  [ /* side kick: chamber the knee, turn side-on, drive the heel straight out, re-chamber */
+    [0, {}], [0.27, { lR: 1.25, kR: 2.2, lzR: 0.4, lL: 0.04, kL: 0.3, lzL: 0.04, lean: -0.04, roll: 0.14, twist: 0.08, drop: -0.04, headY: 0.95 }],
+    [0.46, { lR: 0.3, kR: 0.03, lzR: 1.62, lL: -0.02, kL: 0.16, lzL: 0.12, lean: -0.06, roll: 0.5, twist: 0.26, drop: -0.01, headY: 1.1, aR: 0.25, eR: -0.95, zR: 0.5, yR: 0, aL: -0.92, eL: -2.35 }],
+    [0.66, { lR: 0.32, kR: 0.08, lzR: 1.54, lL: -0.02, kL: 0.16, lzL: 0.12, lean: -0.05, roll: 0.46, twist: 0.24, drop: -0.01, headY: 1.05, aR: 0.2, eR: -0.95, zR: 0.45, yR: 0 }],
+    [0.84, { lR: 1.05, kR: 1.95, lzR: 0.35, roll: 0.12, headY: 0.8 }],
+    [1, {}]],
+  [ /* spinning hook kick: wind, whip the straight leg round at chest height, land back in guard */
+    [0, {}], [0.2, { lR: 0.55, kR: 1.3, lzR: 0.6, roll: 0.16, drop: -0.05, aL: -0.5, eL: -1.6 }],
+    [0.42, { lR: 0.28, kR: 0.05, lzR: 1.48, roll: 0.46, lean: -0.08, zL: 0.75, aL: -0.35, eL: -1.15, zR: 0.85, aR: -0.15, eR: -0.75, yR: 0, lL: 0, kL: 0.16, drop: -0.02, headY: 0 }],
+    [0.74, { lR: 0.3, kR: 0.08, lzR: 1.42, roll: 0.42, zL: 0.65, zR: 0.75, aL: -0.35, eL: -1.15, aR: -0.15, eR: -0.75, yR: 0, headY: 0 }],
+    [1, {}]]
+];
+const ATK_YAW = [null, [[0, 0], [0.24, -1.05], [0.44, -1.5], [0.7, -1.5], [0.9, -0.5], [1, 0]], null];
+function atkKeys(keys, u, o) {
+  let i = 0; while (i < keys.length - 2 && u > keys[i + 1][0]) i++;
+  const [t0, A] = keys[i], [t1, B] = keys[i + 1];
+  let f = clamp((u - t0) / Math.max(1e-4, t1 - t0), 0, 1); f = f * f * (3 - 2 * f);
+  for (const k in STANCE) { const a = k in A ? A[k] : STANCE[k], b = k in B ? B[k] : STANCE[k]; o[k] = a + (b - a) * f; }
+}
+function atkYaw(u) { const K = ATK_YAW[CB.k]; if (!K) return 0; let i = 0; while (i < K.length - 2 && u > K[i + 1][0]) i++; let f = clamp((u - K[i][0]) / (K[i + 1][0] - K[i][0]), 0, 1); f = f * f * (3 - 2 * f); return K[i][1] + (K[i + 1][1] - K[i][1]) * f; }
+function atkTip() { hero.updateMatrixWorld(true); return (CB.k === 0 ? armR.end : legR.end).getWorldPosition(new V3()); }
+const CE = [];                                     // everything the hero can hit this frame
+function rebuildCE() { CE.length = 0; for (const e of MS.ents) CE.push(e); if (typeof PEDS !== 'undefined') for (const e of PEDS.ents) CE.push(e); }
 function nearestHittable(R) {
   let best = null, bd = R;
-  for (const e of MS.ents) { if (!e.hittable || !e.alive) continue; const d = Math.hypot(e.pos.x - P.pos.x, e.pos.z - P.pos.z) - e.r; if (d < bd && Math.abs(e.pos.y - P.pos.y) < 3) { bd = d; best = e; } }
+  for (const e of CE) { if (!e.hittable || !e.alive) continue; const d = Math.hypot(e.pos.x - P.pos.x, e.pos.z - P.pos.z) - e.r; if (d < bd && Math.abs(e.pos.y - P.pos.y) < 3) { bd = d; best = e; } }
   return best;
 }
 function msAct() {
@@ -5956,7 +6266,7 @@ function startAtk(k) {
 }
 function meleeHits(A) {
   const fx = Math.sin(CB.yaw), fz = Math.cos(CB.yaw);
-  for (const e of MS.ents) {
+  for (const e of CE) {
     if (!e.hittable || !e.alive || CB.done.has(e)) continue;
     const dx = e.pos.x - P.pos.x, dz = e.pos.z - P.pos.z, L = Math.hypot(dx, dz) || 0.01;
     if (L - e.r > A.range || e.pos.y > P.pos.y + 2.4 || e.pos.y + e.h < P.pos.y - 0.4) continue;
@@ -5964,7 +6274,8 @@ function meleeHits(A) {
     CB.done.add(e);
     const dir = new V3(dx / L, 0, dz / L);
     e.onHit(A.dmg, dir, A.name, A.knock);
-    const c = e.center(); fxBurst('spark', _mv1.lerpVectors(hpos(), c, 0.7), 10, 6, 0.25, 0xfff2c8, 0, 4);
+    const c = e.center().clone(), tip = atkTip();
+    fxBurst('spark', tip.lerp(c, 0.35), 12, 6, 0.25, 0xfff2c8, 0, 4); fxBurst('spark', tip, 5, 2, 0.12, 0xffffff, 0, 8);
     sfx('punch'); CAM.shake = Math.max(CAM.shake, 0.12);
   }
 }
@@ -5985,7 +6296,7 @@ function msZipUp() { if (MS.cur && MS.cur.onZipUp) MS.cur.onZipUp(); }
 function webOrigin() { hero.updateMatrixWorld(true); return armR.end.getWorldPosition(new V3()); }
 function aimTarget(dir, cone, range, from) {
   let best = null, bs = cone;
-  for (const e of MS.ents) {
+  for (const e of CE) {
     if (!e.webbable || !e.alive) continue;
     const v = _mv1.subVectors(e.center(), from), d = v.length();
     if (d > range || d < 0.4) continue;
@@ -6030,7 +6341,7 @@ function websUpdate(dt) {
     const from = w.life > (w.net ? 0.6 : 0.85) ? w.o : tail;
     a[0] = from.x; a[1] = from.y; a[2] = from.z; a[3] = w.p.x; a[4] = w.p.y; a[5] = w.p.z; w.ln.geometry.attributes.position.needsUpdate = true;
     let done = false;
-    for (const e of MS.ents) {
+    for (const e of CE) {
       if (!e.alive || !(e.webbable || e.hittable) || !e.onWeb) continue;
       if (segNear(_seg0, w.p, e.center(), (e.r || 0.5) + 0.55)) { e.onWeb(w.v.clone().normalize(), w.net); done = true; break; }
     }
@@ -6040,28 +6351,28 @@ function websUpdate(dt) {
   }
 }
 function combatUpdate(dt) {
+  rebuildCE();
   if (P.faceT > 0) P.faceT -= dt;
   CB.shootT -= dt;
   if (CB.webDown) CB.webT += dt;
   if (CB.k >= 0) {
     const A = ATK[CB.k]; CB.t += dt;
+    const u = CB.t / A.dur;
     if (CB.k === 2) { P.faceYaw = CB.yaw + Math.min(1, CB.t / (A.dur * 0.85)) * Math.PI * 2; P.faceT = 0.06; P.faceHard = 1; }
+    else { P.faceYaw = CB.yaw + atkYaw(u); P.faceT = 0.06; P.faceHard = 1; }
+    if (u > (A.hit / A.dur) - 0.12 && u < (A.hitEnd || A.hit) / A.dur + 0.1) { const tp = atkTip(); fxEmit('spark', tp.x, tp.y, tp.z, 0, 0.2, 0, 0.14, 0xe8f2ff, 0, 6); }
     if (A.hitEnd ? CB.t >= A.hit && CB.t <= A.hitEnd : CB.t >= A.hit && !CB.once) { CB.once = true; meleeHits(A); }
     if (CB.t >= A.dur) { CB.lastK = CB.k; CB.lastEnd = CLOCK; const q = CB.queued; CB.k = -1; if (q && CB.lastK < 2) startAtk(CB.lastK + 1); }
   }
   websUpdate(dt);
   CB.lockT -= dt;
-  if (CB.lockT <= 0) { CB.lockT = 0.1; CB.lock = MS.ents.length ? aimTarget(camDir, 0.22, 90, camera.position) : null; }
+  if (CB.lockT <= 0) { CB.lockT = 0.1; CB.lock = CE.length ? aimTarget(camDir, 0.22, 90, camera.position) : null; }
   const ret = $('reticle'); ret.classList.toggle('charge', CB.webDown && CB.webT >= 0.32); ret.classList.toggle('lock', !!CB.lock);
 }
 MS.pose = function (o) {
   let used = false;
-  if (CB.k >= 0) {
-    used = true; const u = CB.t / ATK[CB.k].dur;
-    if (CB.k === 0) { const e = Math.sin(Math.min(1, u * 1.7) * Math.PI); Object.assign(o, { aR: -0.2 - 1.4 * e, eR: -1.2 * (1 - e), aL: -0.9, eL: -1.6, twist: -0.55 * e, lean: 0.18, lL: 0.35, lR: -0.25, kL: 0.3, kR: 0.25 }); }
-    else if (CB.k === 1) { const e = Math.sin(Math.min(1, u * 1.5) * Math.PI); Object.assign(o, { lR: 1.55 * e, kR: 0.15, lL: -0.12, kL: 0.3, aL: -0.7, aR: -0.5, eL: -1.4, eR: -1.4, lean: -0.3 * e, twist: 0.35 * e }); }
-    else Object.assign(o, { lR: 1.5, kR: 0.05, lL: 0.08, kL: 0.4, aL: -0.35, aR: -0.35, eL: -0.9, eR: -0.9, lean: -0.38, twist: 0 });
-  }
+  if (CB.k >= 0) { used = true; atkKeys(ATK_KEYS[CB.k], CB.t / ATK[CB.k].dur, o); o.snap = 1; }
+  else if (CLOCK - CB.lastEnd < 0.7 && P.state === 'ground' && Math.hypot(P.vel.x, P.vel.z) < 3) { used = true; Object.assign(o, STANCE); }   // stay in guard for a moment
   if (CB.shootT > 0) { used = true; o.aR = -1.55; o.eR = -0.05; o.twist = -0.15; }
   else if (CB.webDown && CB.webT >= 0.2) { used = true; o.aR = o.aL = -1.45; o.eR = o.eL = -0.25; }
   if (MS.heroPose && MS.heroPose(o)) used = true;
@@ -6123,13 +6434,14 @@ function msOnAllSpots() {
 }
 function msBrief(i) {
   const m = MSN[STAGE.id][i];
-  msShowCard({ kicker: `${STAGE.label} · MISSION ${i + 1}`, name: m.title, text: m.story, keys: m.keys,
+  msShowCard({ kicker: `${STAGE.label} · MISSION ${i + 1}`, name: m.title, text: m.story, keys: m.combat ? [...m.keys, 'R（近くの屋上へ移動）は戦闘中は使えない'] : m.keys,
     btns: [{ label: '▶ ミッション開始', primary: true, fn: () => { msHideCard(); msStart(i); } }, { label: 'あとで', fn: () => { msHideCard(); resume(); } }] });
 }
 function msStart(i) {
   msEnd();
   const m = MSN[STAGE.id][i];
   MS.cur = m; MS.idx = i; MS.t = 0; MS.photos = []; MS.barsN = -1; MS.hudT = 0;
+  pedsCalmAll();
   MS.group = new THREE.Group(); scene.add(MS.group);
   $('down').hidden = true;
   P.hp = 100; P.iframe = 0.5; P.vel.set(0, 0, 0); P.anchor = null; P.glide = false; P.ride = null; P.wall = null; P.zipC = null;
@@ -6343,7 +6655,7 @@ function vkVan() {                                 // getaway van: windowless pa
 
 /* ---------- 1: purse snatcher ---------- */
 MSN.nyc.push({
-  title: 'ひったくり犯を捕まえろ', goal: '逃げるひったくり犯にウェブを当てて捕まえろ',
+  combat: true, title: 'ひったくり犯を捕まえろ', goal: '逃げるひったくり犯にウェブを当てて捕まえろ',
   story: 'タイムズスクエアで歩行者のバッグがひったくられた！ 犯人はピストルを持って通りを逃走中。近づくと撃ってくるので、横に動いたりスウィングでかわしながらウェブを当てて捕獲しよう。',
   keys: ['F：ウェブ発射（3回当てると捕獲）', 'E：近くで打撃（動きを止めたら確保）', '撃つ前に銃を構える — 横へ動いてかわそう'],
   limit: 180, timeout: 'ひったくり犯に逃げられた…', win: 'ひったくり犯を確保！ バッグは無事に持ち主のもとへ戻った。',
@@ -6408,7 +6720,7 @@ MSN.nyc.push({
 
 /* ---------- 2: bank robbers' van ---------- */
 MSN.nyc.push({
-  title: '銀行強盗のバンを破壊しろ', goal: '投げてくるグレネードをウェブで打ち返してバンに当てろ',
+  combat: true, title: '銀行強盗のバンを破壊しろ', goal: '投げてくるグレネードをウェブで打ち返してバンに当てろ',
   story: '金融街の銀行が襲われた！ 強盗団のバンが逃走中だ。バンはグレネードを投げてくる。グレネードにウェブ（F）を当てるとバンへ打ち返せる。3発当てればバンは止まる。',
   keys: ['F：グレネードにウェブ（自動で狙う）→ 打ち返し', 'E：近くのグレネードを打ち返す', 'バンから離れすぎると見失う'],
   limit: 240, timeout: 'バンに逃げ切られた…', win: 'バンは大破し強盗団は御用！ 盗まれたお金も無事回収された。',
@@ -6512,7 +6824,7 @@ function mkLizard() {
   return d;
 }
 MSN.nyc.push({
-  title: '怪人トカゲ人間', goal: 'ウェブを何度も当てて動きを封じろ',
+  combat: true, title: '怪人トカゲ人間', goal: 'ウェブを何度も当てて動きを封じろ',
   story: 'マンホールから巨大なトカゲ人間が現れた！ 通りの車やバスをつかんで投げつけ、ビルもよじ登ってくる。近づくと噛みつき・鋭い爪・しっぽの回転攻撃。ウェブを何度も当てて拘束ゲージを満タンにすれば勝ちだ。',
   keys: ['F：ウェブ（長押しで拡散ネット）', 'E：打撃（回し蹴りは拘束ゲージ多め）', '足元に赤い輪 → しっぽ攻撃。ジャンプか距離をとれ', 'C：受け身'],
   limit: 300, timeout: 'トカゲ人間は再び地下へ逃げてしまった…', win: 'トカゲ人間をウェブでぐるぐる巻きに！ 街に平和が戻った。',
@@ -6851,62 +7163,327 @@ MSN.hk.push({
   end() { MS.snap = null; }
 });
 
-/* ---------- 3: you're an action star too ---------- */
+/* ---------- HK mission 3: the harbour-plaza brawl (6 waves, 3 mid-bosses, the boss) ---------- */
 const GANG = {
   fist: { name: '素手のチンピラ', hp: 3, reach: 1.6, wind: 0.38, dmg: 6, spd: 6.2, cd: 1.1, top: 0x2b2d33 },
   staff: { name: '棍', hp: 4, reach: 2.8, wind: 0.5, dmg: 9, spd: 5.4, cd: 1.5, top: 0x5a2a2a, prop: 'staff' },
-  dao: { name: '青龍刀', hp: 4, reach: 2.2, wind: 0.6, dmg: 14, spd: 5.0, cd: 1.7, top: 0x1d2a3a, prop: 'dao' },
-  pipe: { name: '鉄パイプ', hp: 3, reach: 2.0, wind: 0.45, dmg: 10, spd: 5.8, cd: 1.4, top: 0x3a3a2a, prop: 'pipe' },
-  boss: { name: '親分の青龍刀', hp: 10, reach: 2.5, wind: 0.65, dmg: 18, spd: 5.0, cd: 1.3, top: 0x6a1414, prop: 'dao', scale: 1.22 }
+  dao: { name: '青龍刀', hp: 4, reach: 2.2, wind: 0.6, dmg: 12, spd: 5.0, cd: 1.7, top: 0x1d2a3a, prop: 'dao' },
+  pipe: { name: '鉄パイプ', hp: 3, reach: 2.0, wind: 0.45, dmg: 9, spd: 5.8, cd: 1.4, top: 0x3a3a2a, prop: 'pipe' },
+  bottle: { name: '酒瓶', hp: 3, reach: 1.6, wind: 0.4, dmg: 5, spd: 5.6, cd: 1.3, top: 0x4b5a34, prop: 'bottle', ranged: 1 },
+  /* mid-bosses: super armour while attacking, poise before they flinch, two special moves each */
+  rod: { name: '棍術師範', short: '中ボス　棍術師範', hp: 14, reach: 3.0, wind: 0.5, dmg: 10, spd: 5.6, cd: 1.3, top: 0xe6dcc4, bottom: 0x1a1a1c, prop: 'staff', scale: 1.14, bulk: 1.05, band: 0xb3121a, sash: 0xb3121a, named: 1, poise: 3, sp: ['sweep', 'lunge'],
+    hint: '赤い円＝回転なぎ払い／赤い線＝突き。構えた瞬間に F 長押しの網で止められる' },
+  twin: { name: '双刀使い', short: '中ボス　双刀使い', hp: 13, reach: 2.4, wind: 0.4, dmg: 7, spd: 7.0, cd: 1.0, top: 0x1b2444, bottom: 0x121418, prop: 'dao', prop2: 'dao', scale: 1.1, band: 0x111111, named: 1, poise: 3, sp: ['combo', 'dash'],
+    hint: '踏み込みからの三連斬り。光ったら横へ逃げるか、網で止めろ' },
+  brute: { name: '用心棒', short: '中ボス　用心棒', hp: 18, reach: 2.1, wind: 0.6, dmg: 12, spd: 4.6, cd: 1.6, top: 0x121212, bottom: 0x2a2a30, sleeve: 'short', bald: 1, shades: 1, scale: 1.32, bulk: 1.5, named: 1, poise: 5, heavy: 1, sp: ['slam', 'charge'],
+    hint: '突進（赤い線）と地面叩き（赤い円）。ウェブでは吹き飛ばない — 大技の後の隙を叩け' },
+  boss: { name: '親分', short: '親分', hp: 22, reach: 2.5, wind: 0.6, dmg: 15, spd: 5.2, cd: 1.2, top: 0x6a1414, bottom: 0x16161a, prop: 'dao', scale: 1.22, bulk: 1.2, shades: 1, chain: 1, named: 2, poise: 4, sp: ['slam', 'combo'],
+    hint: 'HP が半分を切ると子分を呼ぶ' }
 };
+/* special moves: wind-up (telegraphed, can be broken by the net) → active (armoured) → recovery (open to flinch) */
+const GSP = {
+  sweep: { wind: 0.8, act: 0.45, rec: 0.6, R: 3.6, dmg: 13, knock: 13, up: 6, ring: 1, min: 0, max: 3.3, cd: 4.5 },
+  lunge: { wind: 0.55, act: 0.4, rec: 0.6, spd: 17, dmg: 11, knock: 11, up: 4, lane: 6.8, min: 3.6, max: 7.5, cd: 4 },
+  combo: { wind: 0.35, act: 0.95, rec: 0.65, hits: [0.1, 0.4, 0.7], R: 2.7, dmg: 6, knock: 9, up: 4, step: 5, min: 0, max: 2.9, cd: 3.4 },
+  dash: { wind: 0.25, act: 0.55, rec: 0, spd: 15, min: 4.5, max: 11, cd: 3.6 },
+  slam: { wind: 0.95, act: 0.14, rec: 0.9, R: 4.4, dmg: 15, knock: 12, up: 8, ring: 1, min: 0, max: 3.8, cd: 5 },
+  charge: { wind: 0.7, act: 1.0, rec: 0.9, spd: 18, dmg: 14, knock: 17, up: 6, lane: 14, min: 5, max: 16, cd: 5.5 }
+};
+const GANG_WAVES = [
+  { list: ['fist', 'fist', 'staff', 'pipe', 'fist'] },
+  { list: ['rod', 'fist', 'staff', 'staff', 'pipe', 'fist', 'dao'] },
+  { list: ['dao', 'pipe', 'staff', 'fist', 'bottle', 'bottle', 'fist'] },
+  { list: ['twin', 'dao', 'fist', 'pipe', 'bottle', 'staff', 'fist'] },
+  { list: ['brute', 'pipe', 'pipe', 'fist', 'bottle', 'staff'] },
+  { list: ['boss', 'dao', 'dao', 'staff', 'bottle', 'pipe'], boss: 1 }
+];
+const GANG_REINF = ['fist', 'pipe', 'fist', 'bottle'];
+function mkBottle() {
+  const g = new THREE.Group();
+  const glass = new THREE.MeshPhongMaterial({ color: 0x2f6a34, specular: 0xbfe8c0, shininess: 70 });
+  const b = new THREE.Mesh(latheGeo([[0.001, -0.25], [0.036, -0.25], [0.038, -0.1], [0.016, -0.05], [0.013, 0.0], [0.001, 0.0]], 10), glass); b.castShadow = true; g.add(b);
+  return g;
+}
+const _gq = new V3();
 MSN.hk.push({
-  title: 'あなたもアクション俳優！', goal: '観覧車前の広場に集まったマフィアを全員倒せ',
-  story: '観覧車近くの広場に、棍・青龍刀・鉄パイプ・素手…武器を持ったマフィアが集まっている！ 全員倒して街の治安を取り戻そう。E 連打でパンチ→キック→回し蹴り、F のウェブで吹き飛ばし、F 長押しで網を広げて一網打尽だ。',
-  keys: ['E 連打：パンチ → キック → 回し蹴り（周囲をまとめて攻撃）', 'F：ウェブで吹き飛ばす／長押し：拡散ネットで動きを止める', '武器を振り上げたら攻撃の合図 — 下がるか先に叩け', 'C：受け身'],
-  win: '広場のマフィアを一掃！ 香港映画のワンシーンのような立ち回りだった。',
+  combat: true, title: 'あなたもアクション俳優！', goal: '観覧車前の広場に集まったマフィアを全員倒せ',
+  story: '観覧車近くの広場に、棍・青龍刀・鉄パイプ・素手・酒瓶…武器を持ったマフィアが続々と集まってくる！ 6 波・総勢 40 人超。途中で「棍術師範」「双刀使い」「用心棒」の 3 人の中ボス、最後に親分が現れる。E 連打でパンチ→キック→回し蹴り、F のウェブで吹き飛ばし、F 長押しで網を広げて一網打尽だ。',
+  keys: ['E 連打：パンチ → キック → 回し蹴り（周囲をまとめて攻撃）', 'F：ウェブで吹き飛ばす／長押し：拡散ネットで動きを止める', '武器を振り上げたら攻撃の合図 — 下がるか先に叩け',
+    '中ボスは攻撃中ひるまない。赤い円・赤い線は大技の予告 — 範囲の外へ', '大技の「構え」は網で潰せる。大技の後は隙だらけ', '中ボスを倒すと点心（体力回復）を落とす', 'C：受け身'],
+  win: '中ボス 3 人も親分も倒し、広場のマフィアを一掃！ 香港映画のクライマックスのような大立ち回りだった。',
   start() {
     this.C = new V3(-35, 0, 152); this.C.y = groundAt(this.C.x, this.C.z, 30);
     TRAFFIC_BLOCK = { x: this.C.x, z: this.C.z, r: 60 };
-    this.waves = [['fist', 'fist', 'staff', 'pipe'], ['dao', 'staff', 'fist', 'pipe', 'fist'], ['boss', 'dao', 'staff', 'staff', 'pipe']];
-    this.wave = -1; this.next = 1.5; this.foes = []; this.kos = 0; this.total = this.waves.flat().length;
+    this.waves = GANG_WAVES;
+    this.wave = -1; this.next = 1.5; this.foes = []; this.kos = 0; this.winT = 0; this.reinf = false; this.items = [];
+    this.total = this.waves.reduce((n, w) => n + w.list.length, 0) + GANG_REINF.length;
+    this.tele = { ring: new THREE.MeshBasicMaterial({ color: 0xff3020, transparent: true, opacity: 0.55, depthWrite: false }), aura: new THREE.MeshBasicMaterial({ color: 0xf2c230, transparent: true, opacity: 0.75, depthWrite: false }), auraB: new THREE.MeshBasicMaterial({ color: 0xff3b30, transparent: true, opacity: 0.8, depthWrite: false }) };
     P.pos.set(this.C.x, this.C.y + 0.05, this.C.z + 6); P.state = 'ground'; CAM.yaw = 0; CAM.pitch = -0.15;
   },
+  /* a spot on the arena edge that is dry land, flat and not inside a building */
+  spawnSpot(a0, r0) {
+    const C = this.C;
+    for (let j = 0; j < 16; j++) {
+      const a = a0 + (j % 2 ? 1 : -1) * Math.ceil(j / 2) * 0.33, r = Math.max(14, r0 - Math.floor(j / 6) * 7);
+      const x = C.x + Math.cos(a) * r, z = C.z + Math.sin(a) * r;
+      if (landY(x, z) === null) continue;
+      const y = groundAt(x, z, C.y + 30);
+      if (Math.abs(y - C.y) > 1.5 || inCols(_gq.set(x, y + 1, z))) continue;
+      return new V3(x, y, z);
+    }
+    return new V3(C.x + Math.cos(a0) * 12, C.y, C.z + Math.sin(a0) * 12);
+  },
+  spawnFoe(k, a, r, delay) {
+    const T = GANG[k], sc = T.scale || 1, bw = T.bulk || 1;
+    const d = mkDude({ top: T.top, bottom: T.bottom || 0x1e2026, skin: 0xd2a07a, hair: T.bald ? 0xc8966e : 0x141210, scale: sc, bulk: bw, sleeve: T.sleeve });
+    if (T.prop === 'bottle') { d.held = mkBottle(); d.armR.end.add(d.held); }
+    else if (T.prop) d.armR.end.add(mkProp(T.prop));
+    if (T.prop2) d.armL.end.add(mkProp(T.prop2));
+    const M = (c) => new THREE.MeshLambertMaterial({ color: c });
+    if (T.band) d.add(new THREE.CylinderGeometry(0.129, 0.131, 0.035, 16, 1, true), M(T.band), d.head, 0, 0.045, -0.004);
+    if (T.sash) { const s = d.add(new THREE.TorusGeometry(0.168, 0.028, 6, 20), M(T.sash), d.torso, 0, 0.03, 0); s.rotation.x = Math.PI / 2; s.scale.set(bw, 0.68 * bw, 1); }
+    if (T.shades) d.add(new THREE.BoxGeometry(0.19, 0.034, 0.03), new THREE.MeshPhongMaterial({ color: 0x050505, specular: 0x777777, shininess: 90 }), d.head, 0, 0.018, 0.106);
+    if (T.chain) { const c = d.add(new THREE.TorusGeometry(0.1, 0.011, 6, 18), new THREE.MeshPhongMaterial({ color: 0xd4a837, specular: 0xfff0b0, shininess: 80 }), d.torso, 0, 0.6, 0.035); c.rotation.x = 1.25; }
+    d.coc = mkCocoon(0.42 * bw, 1.8); d.root.add(d.coc); MS.group.add(d.root);
+    const pos = this.spawnSpot(a, r);
+    const f = { k, T, d, pos, vel: new V3(), yaw: Math.atan2(this.C.x - pos.x, this.C.z - pos.z), hp: T.hp, st: 'walk', t: 0, cd: 1.2 + Math.random() * 1.5 + (delay || 0), fade: 0, orbit: Math.random() * 6,
+      poise: 0, spc: {}, netImm: 0, armorT: 0, counter: 0, spdMul: 1, sp: null };
+    if (T.sp) for (const s of T.sp) f.spc[s] = 1.5 + Math.random() * 2;
+    if (T.named) {
+      const ring = new THREE.Mesh(new THREE.RingGeometry(0.86, 1, 48), this.tele.ring); ring.rotation.x = -Math.PI / 2; ring.visible = false; ring.renderOrder = 2; MS.group.add(ring); f.ring = ring;
+      const lg = new THREE.PlaneGeometry(1.5, 1); lg.translate(0, -0.5, 0); lg.rotateX(-Math.PI / 2);
+      const lane = new THREE.Mesh(lg, this.tele.ring); lane.visible = false; lane.renderOrder = 2; MS.group.add(lane); f.lane = lane;
+      const au = new THREE.Mesh(new THREE.RingGeometry(0.8 * sc * Math.sqrt(bw), 0.95 * sc * Math.sqrt(bw), 40), T.named === 2 ? this.tele.auraB : this.tele.aura); au.rotation.x = -Math.PI / 2; au.renderOrder = 2; MS.group.add(au); f.aura = au;
+    }
+    const self = this;
+    f.ent = msEnt({ pos, r: 0.45 * sc * Math.sqrt(bw), h: 1.8 * sc, hittable: true, webbable: true, prio: T.named ? 2 : 0,
+      onHit(dmg, dir, kind, knock) { self.damage(f, dmg, dir, knock, kind === '回し蹴り'); },
+      onWeb(dir, net) { self.webbed(f, dir, net); } });
+    this.foes.push(f);
+    return f;
+  },
   spawnWave() {
-    this.wave++; const list = this.waves[this.wave];
-    toast(this.wave === 2 ? '親分のお出ましだ！' : `第${this.wave + 1}波：${list.length}人`, '武器を振り上げたら要注意', 'bad');
+    this.wave++; const W = this.waves[this.wave], list = W.list, base = Math.random() * Math.PI * 2;
+    const boss = list.find((k) => GANG[k].named);
+    if (W.boss) toast('親分のお出ましだ！', GANG.boss.hint, 'bad');
+    else if (boss) toast(`第${this.wave + 1}波：中ボス「${GANG[boss].name}」登場！`, GANG[boss].hint, 'bad');
+    else toast(`第${this.wave + 1}波：${list.length}人`, this.wave === 2 ? '酒瓶を投げてくる奴がいる — 足を止めるな' : '武器を振り上げたら要注意', 'bad');
     list.forEach((k, i) => {
-      const T = GANG[k], a = (i / list.length) * Math.PI * 2 + this.wave, r = 22;
-      const d = mkDude({ top: T.top, bottom: 0x1e2026, skin: 0xd2a07a, hair: 0x141210, scale: T.scale || 1, bulk: k === 'boss' ? 1.2 : 1 });
-      if (T.prop) d.armR.end.add(mkProp(T.prop));
-      d.coc = mkCocoon(0.42, 1.8); d.root.add(d.coc); MS.group.add(d.root);
-      const pos = new V3(this.C.x + Math.cos(a) * r, 0, this.C.z + Math.sin(a) * r); pos.y = groundAt(pos.x, pos.z, 30);
-      const f = { k, T, d, pos, vel: new V3(), yaw: 0, hp: T.hp, st: 'walk', t: 0, cd: 1 + Math.random() * 1.5, fade: 0, orbit: Math.random() * 6 };
-      const self = this;
-      f.ent = msEnt({ pos, r: 0.45 * (T.scale || 1), h: 1.8 * (T.scale || 1), hittable: true, webbable: true,
-        onHit(dmg, dir, kind, knock) { self.damage(f, dmg, dir, knock, kind === '回し蹴り'); },
-        onWeb(dir, net) { if (net) { self.damage(f, 1, dir, 2, false); if (f.hp > 0) { f.st = 'stun'; f.t = 2.6; f.d.coc.visible = true; } } else self.damage(f, 1, dir, 11, true); } });
-      this.foes.push(f);
+      const named = GANG[k].named, a = named ? base : base + 0.6 + (i / list.length) * Math.PI * 1.7;
+      this.spawnFoe(k, a, named ? 26 : 30 + (i % 3) * 3, named ? 0.6 : i * 0.25);
     });
+  },
+  ko(f, dir) {
+    const T = f.T;
+    f.st = 'ko'; f.t = 0; f.sp = null; f.ent.alive = false; this.kos++; f.d.coc.visible = false;
+    f.vel.set(dir.x * 7, 5, dir.z * 7);
+    if (f.ring) { f.ring.visible = false; f.lane.visible = false; f.aura.visible = false; }
+    sfx('land', 0.8);
+    if (T.named) {
+      CAM.shake = Math.max(CAM.shake, 0.35);
+      fxBurst('spark', _mv1.set(f.pos.x, f.pos.y + 1.4, f.pos.z), 30, 8, 0.6, 0xffd27a, 8, 1.5);
+      toast(T.named === 2 ? '親分を倒した！' : `${T.short.replace('　', '「')}」撃破！`, T.named === 2 ? null : '点心を落とした — 拾って体力回復', 'ok');
+      if (T.named === 1) this.dropFood(f.pos);
+    }
+  },
+  dropFood(p) {
+    const g = new THREE.Group(), M = (c) => new THREE.MeshLambertMaterial({ color: c });
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.16, 18), M(0xc89b5a)); g.add(base);
+    const lid = new THREE.Mesh(new THREE.CylinderGeometry(0.27, 0.31, 0.12, 18), M(0xd7ae6c)); lid.position.y = 0.14; g.add(lid);
+    const knob = new THREE.Mesh(new THREE.SphereGeometry(0.06, 10, 8), M(0xa47a40)); knob.position.y = 0.22; g.add(knob);
+    for (const y of [-0.05, 0.05, 0.16]) { const r = new THREE.Mesh(new THREE.TorusGeometry(0.305, 0.012, 5, 24), M(0x8c6630)); r.rotation.x = Math.PI / 2; r.position.y = y; g.add(r); }
+    const glow = new THREE.Mesh(new THREE.RingGeometry(0.45, 0.6, 32), new THREE.MeshBasicMaterial({ color: 0x7dff9a, transparent: true, opacity: 0.6, depthWrite: false })); glow.rotation.x = -Math.PI / 2; glow.position.y = -0.45; g.add(glow);
+    const pos = new V3(p.x, groundAt(p.x, p.z, p.y + 2) + 0.65, p.z);
+    g.position.copy(pos); MS.group.add(g);
+    this.items.push({ g, pos, t: 0 });
   },
   damage(f, dmg, dir, knock, fly) {
     if (f.st === 'ko') return;
-    f.hp -= dmg; f.d.coc.visible = false;
+    const T = f.T;
+    f.hp -= dmg;
+    fxBurst('spark', _mv1.set(f.pos.x, f.pos.y + 1.3 * (T.scale || 1), f.pos.z), 6, 4, 0.2, 0xffe0b0, 0, 4);
+    if (f.hp <= 0) { this.ko(f, dir); return; }
+    if (T.named) {
+      const S = f.sp, rec = S && S.t > S.P.wind + S.P.act;
+      if ((S && !rec) || f.armorT > 0) {                 // super armour mid-move / right after a flinch
+        f.vel.x += dir.x * knock * 0.12; f.vel.z += dir.z * knock * 0.12;
+        fxBurst('spark', _mv1.set(f.pos.x, f.pos.y + 1.2 * T.scale, f.pos.z), 5, 3, 0.18, 0xff9a3a, 0, 4);
+        return;
+      }
+      f.poise += dmg;
+      if (rec || f.poise >= T.poise || (fly && !T.heavy)) {
+        f.poise = 0; this.endSp(f); f.d.coc.visible = false;
+        f.vel.set(dir.x * knock * 0.45, 0, dir.z * knock * 0.45); f.st = 'hit'; f.t = 0.5;
+        f.cd = Math.max(f.cd, 0.35);
+      } else { f.vel.x += dir.x * knock * 0.2; f.vel.z += dir.z * knock * 0.2; }
+      return;
+    }
+    f.d.coc.visible = false;
+    if (f.d.held) f.d.held.visible = true;
     f.vel.set(dir.x * knock, fly ? 6 : 0, dir.z * knock);
-    fxBurst('spark', _mv1.set(f.pos.x, f.pos.y + 1.3, f.pos.z), 6, 4, 0.2, 0xffe0b0, 0, 4);
-    if (f.hp <= 0) { f.st = 'ko'; f.t = 0; f.ent.alive = false; this.kos++; sfx('land', 0.8); if (f.k === 'boss') toast('親分を倒した！', null, 'ok'); }
-    else { f.st = fly ? 'fly' : 'hit'; f.t = fly ? 0.8 : 0.35; }
+    f.st = fly ? 'fly' : 'hit'; f.t = fly ? 0.8 : 0.35;
+  },
+  webbed(f, dir, net) {
+    if (f.st === 'ko') return;
+    const T = f.T;
+    if (!T.named) {
+      if (net) { this.damage(f, 1, dir, 2, false); if (f.hp > 0) { f.st = 'stun'; f.t = 2.6; f.d.coc.visible = true; } }
+      else this.damage(f, 1, dir, 11, true);
+      return;
+    }
+    if (!net) { this.damage(f, 1, dir, T.heavy ? 1 : 3, false); return; }
+    const S = f.sp, inWind = S && S.t < S.P.wind;
+    if (f.netImm > 0 || (S && !inWind)) {               // armoured or still shaking off the last net
+      this.damage(f, 1, dir, 0, false);
+      if (f.st !== 'ko') fxBurst('spark', _mv1.set(f.pos.x, f.pos.y + 1.4, f.pos.z), 8, 3, 0.25, 0xffffff, 0, 3);
+      return;
+    }
+    if (inWind) toast('構えを潰した！', null, 'ok');
+    this.endSp(f); f.hp -= 1;
+    if (f.hp <= 0) { this.ko(f, dir); return; }
+    f.st = 'stun'; f.t = T.heavy ? 1.0 : 1.4; f.netImm = 5; f.d.coc.visible = true; f.poise = 0;
+  },
+  startSp(f, k, hc) {
+    const P0 = GSP[k];
+    f.st = 'sp'; f.sp = { k, P: P0, t: 0, dir: new V3(hc.x - f.pos.x, 0, hc.z - f.pos.z).normalize(), hit: false, n: 0, landed: false };
+    f.spc[k] = P0.cd + Math.random();
+    if (k === 'combo' || k === 'dash') fxBurst('spark', _mv1.set(f.pos.x, f.pos.y + 1.5 * f.T.scale, f.pos.z), 14, 3, 0.35, 0xdfe8ff, 0, 3);
+    sfx('swish', 0.5);
+  },
+  endSp(f) {
+    f.sp = null; if (f.ring) { f.ring.visible = false; f.lane.visible = false; }
+  },
+  /* runs one frame of a special move; returns the anim mode */
+  stepSp(f, dt, hc, dist, dx, dz) {
+    const S = f.sp, P0 = S.P, T = f.T, p = f.pos, sc = T.scale || 1;
+    S.t += dt;
+    const t = S.t, inWind = t < P0.wind, inAct = !inWind && t < P0.wind + P0.act, dy = Math.abs(hc.y - (p.y + 1));
+    const canHit = () => P.state !== 'down' && P.iframe <= 0;
+    const hitHero = (dmg, knock, up, name) => { hurt(dmg, `${T.name}の${name}`); heroKnock(_mv1.set(hc.x - p.x, 0, hc.z - p.z).normalize(), knock, up); };
+    let mode = null;
+    if (inWind && (S.k === 'lunge' || S.k === 'charge' || S.k === 'dash' || S.k === 'combo')) {           // keep tracking the hero while winding up
+      _mv1.set(dx, 0, dz).normalize(); S.dir.lerp(_mv1, Math.min(1, dt * (S.k === 'charge' ? 3 : 6))).normalize();
+      f.yaw = Math.atan2(S.dir.x, S.dir.z);
+    }
+    if (f.ring) {
+      f.ring.visible = !!P0.ring && inWind;
+      if (f.ring.visible) { const s = P0.R * (0.45 + 0.55 * t / P0.wind); f.ring.scale.set(s, s, 1); f.ring.position.set(p.x, p.y + 0.2, p.z); }
+      f.lane.visible = !!P0.lane && inWind;
+      if (f.lane.visible) { f.lane.position.set(p.x, p.y + 0.21, p.z); f.lane.rotation.y = Math.atan2(S.dir.x, S.dir.z); f.lane.scale.set(sc, 1, P0.lane); }
+      this.tele.ring.opacity = 0.42 + 0.2 * Math.sin(CLOCK * 22);
+    }
+    switch (S.k) {
+      case 'sweep':
+        if (inWind) mode = 'wind';
+        else if (inAct) { mode = 'spin'; f.yaw += dt * 21; if (!S.hit && dist < P0.R && dy < 2 && canHit()) { S.hit = true; hitHero(P0.dmg, P0.knock, P0.up, '回転なぎ払い'); } if (Math.random() < 0.5) fxBurst('spark', _mv1.set(p.x + Math.sin(f.yaw) * 2.2, p.y + 1.1, p.z + Math.cos(f.yaw) * 2.2), 2, 2, 0.2, 0xffe0b0, 0, 2); }
+        else mode = 'stun';
+        break;
+      case 'lunge':
+        if (inWind) mode = 'guard';
+        else if (inAct) {
+          mode = 'lunge';
+          _mv1.set(p.x + S.dir.x * 1.2, p.y + 1, p.z + S.dir.z * 1.2);
+          if (!inCols(_mv1)) { p.x += S.dir.x * P0.spd * dt; p.z += S.dir.z * P0.spd * dt; }
+          if (!S.hit && dist < 1.9 * sc && dy < 1.8 && canHit()) { S.hit = true; hitHero(P0.dmg, P0.knock, P0.up, '突き'); }
+        } else mode = 'stun';
+        break;
+      case 'dash':
+        mode = inWind ? 'guard' : 'charge';
+        if (!inWind) {
+          if (dist > 2.2) { p.x += S.dir.x * P0.spd * dt; p.z += S.dir.z * P0.spd * dt; S.dir.lerp(_mv1.set(dx, 0, dz).normalize(), Math.min(1, dt * 4)).normalize(); f.yaw = Math.atan2(S.dir.x, S.dir.z); }
+          if (dist <= 2.2 || t > P0.wind + P0.act) { this.endSp(f); this.startSp(f, 'combo', hc); f.sp.t = GSP.combo.wind * 0.6; return 'charge'; }
+        }
+        break;
+      case 'combo': {
+        if (inWind) { mode = 'guard'; break; }
+        if (!inAct) { mode = 'stun'; break; }
+        const at = t - P0.wind;
+        mode = S.n % 2 ? 'punch' : 'strike';
+        if (S.n < P0.hits.length && at >= P0.hits[S.n]) {
+          const i = S.n++;
+          _mv1.set(dx, 0, dz).normalize(); S.dir.lerp(_mv1, 0.6).normalize(); f.yaw = Math.atan2(S.dir.x, S.dir.z);
+          f.vel.x += S.dir.x * P0.step; f.vel.z += S.dir.z * P0.step;
+          const fx = p.x + S.dir.x * 1.1, fz = p.z + S.dir.z * 1.1;
+          fxBurst('spark', _mv1.set(fx, p.y + 1.25 * sc, fz), 9, 5, 0.2, 0xdfe8ff, 0, 5);
+          sfx('swish', 0.7);
+          const front = (dx * S.dir.x + dz * S.dir.z) / (dist || 1);
+          if (dist < P0.R && front > 0.1 && dy < 1.8 && P.state !== 'down' && (P.iframe <= 0 || S.landed)) {
+            const last = i === P0.hits.length - 1;
+            S.landed = true; hurt(P0.dmg, `${T.name}の${last ? '三連斬り' : '連斬り'}`);
+            heroKnock(_mv1.set(dx, 0, dz).normalize(), last ? P0.knock : 2.5, last ? P0.up : 1.5);
+          }
+        }
+        break;
+      }
+      case 'slam':
+        if (inWind) mode = 'slamUp';
+        else {
+          mode = 'slamDown';
+          if (!S.hit) {
+            S.hit = true;
+            for (let i = 0; i < 28; i++) { const a = (i / 28) * Math.PI * 2; fxEmit('smoke', p.x + Math.cos(a) * 1.2, p.y + 0.3, p.z + Math.sin(a) * 1.2, Math.cos(a) * 9, 1.2, Math.sin(a) * 9, 1.1, 0x8a8278, -1, 2.6); }
+            fxBurst('spark', _mv1.set(p.x + S.dir.x, p.y + 0.2, p.z + S.dir.z), 26, 9, 0.5, 0xffd08a, 14, 1);
+            sfx('boom', 0.45); CAM.shake = Math.max(CAM.shake, clamp(0.7 - dist / 40, 0.1, 0.6));
+            if (dist < P0.R && hc.y - p.y < 2.4 && canHit()) hitHero(P0.dmg, P0.knock, P0.up, '地面叩き');
+          }
+        }
+        break;
+      case 'charge':
+        if (inWind) { mode = 'guard'; if (Math.random() < 0.3) fxEmit('smoke', p.x - S.dir.x * 0.5, p.y + 0.1, p.z - S.dir.z * 0.5, -S.dir.x * 2, 0.6, -S.dir.z * 2, 0.6, 0x9a9288, 0, 2); }
+        else if (inAct && !S.hit) {
+          mode = 'charge';
+          _mv1.set(p.x + S.dir.x * 1.4, p.y + 1, p.z + S.dir.z * 1.4);
+          const off = Math.hypot(p.x + S.dir.x - this.C.x, p.z + S.dir.z - this.C.z);
+          if (inCols(_mv1) || off > 44) { S.hit = true; S.t = P0.wind + P0.act; S.extra = 0.6; CAM.shake = Math.max(CAM.shake, 0.25); sfx('land', 0.9); fxBurst('spark', _mv1, 16, 5, 0.4, 0xffffff, 8, 1); }
+          else { p.x += S.dir.x * P0.spd * dt; p.z += S.dir.z * P0.spd * dt; }
+          if (Math.random() < 0.5) fxEmit('smoke', p.x, p.y + 0.15, p.z, -S.dir.x * 3, 0.8, -S.dir.z * 3, 0.7, 0x9a9288, 0, 2);
+          if (!S.hit && dist < 1.8 * sc && dy < 1.8 && canHit()) { S.hit = true; S.t = P0.wind + P0.act; hitHero(P0.dmg, P0.knock, P0.up, '突進'); }
+        } else mode = 'stun';
+        break;
+      default: break;
+    }
+    if (t >= P0.wind + P0.act + P0.rec + (S.extra || 0)) { this.endSp(f); f.st = 'walk'; f.cd = T.cd * 0.6 + Math.random() * 0.6; }
+    return mode;
+  },
+  throwBottle(f, hc) {
+    const p = f.pos, sc = f.T.scale || 1;
+    const o = new V3(p.x + Math.sin(f.yaw) * 0.3, p.y + 1.85 * sc, p.z + Math.cos(f.yaw) * 0.3);
+    const dx = hc.x - o.x, dz = hc.z - o.z, h = Math.hypot(dx, dz), Tf = clamp(h / 15, 0.45, 1.15), g = 16;
+    const tx = hc.x + P.vel.x * Tf * 0.5, tz = hc.z + P.vel.z * Tf * 0.5;
+    const v = new V3((tx - o.x) / Tf, (hc.y - o.y + 0.5 * g * Tf * Tf) / Tf, (tz - o.z) / Tf);
+    const mesh = mkBottle();
+    if (f.d.held) f.d.held.visible = false; f.reload = 0.9;
+    msShot({ p: o, v, g, r: 0.2, dmg: f.T.dmg, knock: 3, reason: '飛んできた酒瓶', mesh, spin: 12, life: 3,
+      onImpact(s) { fxBurst('spark', s.p, 14, 4, 0.35, 0x8fd18f, 12, 1); fxBurst('spark', s.p, 6, 3, 0.25, 0xffffff, 10, 1); sfx('punch', 0.35); } });
+    sfx('swish', 0.5);
   },
   update(dt) {
     const hc = hpos(), C = this.C;
-    if (this.foes.every((f) => f.st === 'ko')) {
-      if (this.wave >= this.waves.length - 1) { this.next -= dt; if (this.next <= -1.2) { msWin(); return; } }
-      else { this.next -= dt; if (this.next <= 0) { this.spawnWave(); this.next = 2.2; } }
+    const alive = this.foes.filter((f) => f.st !== 'ko'), namedAlive = alive.some((f) => f.T.named);
+    if (this.wave < this.waves.length - 1) {
+      const nxt = this.waves[this.wave + 1];
+      const ready = this.wave < 0 || (!namedAlive && alive.length <= (nxt.boss ? 0 : 2));
+      if (ready) { this.next -= dt; if (this.next <= 0) { this.spawnWave(); this.next = 2.4; } }
+      else this.next = Math.max(this.next, 1.6);
+    } else if (!alive.length) { this.winT += dt; if (this.winT >= 1.2) { msWin(`総勢 ${this.total} 人のマフィアを一掃！ ` + this.win); return; } }
+    /* healing dim sum dropped by mid-bosses */
+    for (let i = this.items.length - 1; i >= 0; i--) {
+      const it = this.items[i]; it.t += dt;
+      it.g.position.set(it.pos.x, it.pos.y + Math.sin(it.t * 3) * 0.12, it.pos.z); it.g.rotation.y += dt * 1.6;
+      if (Math.hypot(P.pos.x - it.pos.x, P.pos.z - it.pos.z) < 1.7 && Math.abs(P.pos.y - it.pos.y) < 2.4 && P.state !== 'down') {
+        P.hp = Math.min(100, P.hp + 40); toast('点心で体力回復 ＋40', null, 'ok'); sfx('spot', 0.6);
+        fxBurst('spark', it.pos, 20, 3, 0.6, 0x7dff9a, -2, 2); MS.group.remove(it.g); this.items.splice(i, 1);
+      }
     }
-    const attackers = this.foes.filter((f) => f.st === 'wind' || f.st === 'strike').length;
+    const cap = namedAlive ? 2 : 3;
+    let attackers = 0;
+    for (const f of this.foes) if (!f.T.named && (f.st === 'wind' || f.st === 'strike')) attackers++;
     for (const f of this.foes) {
       const p = f.pos, dx = hc.x - p.x, dz = hc.z - p.z, dist = Math.hypot(dx, dz) || 0.01, T = f.T;
       let mode = null, spd = 0;
-      f.t -= dt; f.cd -= dt;
+      f.t -= dt; f.cd -= dt; f.netImm -= dt; f.armorT -= dt;
+      if (f.reload > 0) { f.reload -= dt; if (f.reload <= 0 && f.d.held) f.d.held.visible = true; }
+      if (T.sp) for (const s of T.sp) f.spc[s] -= dt;
       p.addScaledVector(f.vel, dt); f.vel.x *= Math.exp(-5 * dt); f.vel.z *= Math.exp(-5 * dt);
       const gy = groundAt(p.x, p.z, p.y + 1);
       if (f.vel.y !== 0 || p.y > gy + 0.05) { f.vel.y -= G * dt; if (p.y < gy) { p.y = gy; f.vel.y = 0; } } else p.y = gy;
@@ -6914,37 +7491,65 @@ MSN.hk.push({
       if (inCols(_mv1.set(p.x, p.y + 1, p.z))) { p.x -= f.vel.x * dt * 2; p.z -= f.vel.z * dt * 2; f.vel.set(0, f.vel.y, 0); }
       const face = (y) => { let a = y - f.yaw; a = Math.atan2(Math.sin(a), Math.cos(a)); f.yaw += a * Math.min(1, dt * 9); };
       switch (f.st) {
-        case 'ko': mode = 'ko'; if (f.t < -4) { f.fade = 1; f.d.root.visible = false; } break;
-        case 'hit': mode = 'hit'; if (f.t <= 0) { f.st = 'walk'; f.cd = Math.max(f.cd, 0.5); } break;
+        case 'ko':
+          mode = 'ko';
+          if (f.t < -4 && !f.fade) { f.fade = 1; f.d.root.visible = false; MS.group.remove(f.d.root); if (f.aura) { MS.group.remove(f.aura); MS.group.remove(f.ring); MS.group.remove(f.lane); } }
+          break;
+        case 'hit': mode = 'hit'; if (f.t <= 0) { f.st = 'walk'; f.cd = Math.max(f.cd, 0.5); if (T.named) { f.armorT = 1.8; f.cd = 0; f.counter = 1; } } break;
         case 'fly': mode = 'hit'; f.d.rig.rotation.x = -0.9; if (f.t <= 0) { f.st = 'walk'; f.cd = Math.max(f.cd, 0.8); } break;
         case 'stun': mode = 'stun'; if (f.t <= 0) { f.st = 'walk'; f.d.coc.visible = false; } break;
+        case 'sp': mode = this.stepSp(f, dt, hc, dist, dx, dz); if (f.st === 'ko') mode = 'ko'; break;
+        case 'throw':
+          mode = 'wind'; face(Math.atan2(dx, dz));
+          if (f.t <= 0) { this.throwBottle(f, hc); f.st = 'strike'; f.t = 0.3; }
+          break;
         case 'wind': mode = 'wind'; face(Math.atan2(dx, dz)); if (f.t <= 0) { f.st = 'strike'; f.t = 0.28; if (dist < T.reach + 0.7 && Math.abs(hc.y - (p.y + 1)) < 1.8 && P.iframe <= 0) { hurt(T.dmg, `${T.name}の一撃`); heroKnock(_mv1.set(dx, 0, dz).normalize(), 6, 4); } sfx('swish', 0.7); } break;
-        case 'strike': mode = T.prop ? 'strike' : 'punch'; if (f.t <= 0) { f.st = 'walk'; f.cd = T.cd + Math.random() * 0.8; } break;
+        case 'strike': mode = T.prop && T.prop !== 'bottle' ? 'strike' : 'punch'; if (f.t <= 0) { f.st = 'walk'; f.cd = T.named ? T.cd * 0.6 + Math.random() * 0.5 : T.cd + Math.random() * 0.8; } break;
         default: {
           face(Math.atan2(dx, dz));
-          const want = attackers < 2 || f.k === 'boss' ? T.reach * 0.85 : 4.6;
+          const ranged = T.ranged && dist > 3.2;
+          const want = ranged ? 10.5 : T.named || attackers < cap ? T.reach * 0.85 : 4.6;
           let mx = 0, mz = 0;
           if (dist > want + 0.3) { mx = dx / dist; mz = dz / dist; }
           else if (dist < want - 0.6) { mx = -dx / dist * 0.6; mz = -dz / dist * 0.6; }
-          if (dist < 7) { const o = f.orbit; mx += Math.cos(o) * 0.35 * (dz / dist) ; mz -= Math.cos(o) * 0.35 * (dx / dist); f.orbit += dt * 0.4; }
-          for (const g of this.foes) { if (g === f || g.st === 'ko') continue; const ex = p.x - g.pos.x, ez = p.z - g.pos.z, e2 = ex * ex + ez * ez; if (e2 < 2.4 && e2 > 1e-4) { mx += ex / e2 * 0.7; mz += ez / e2 * 0.7; } }
+          if (dist < (ranged ? 14 : 7)) { const o = f.orbit; mx += Math.cos(o) * 0.35 * (dz / dist); mz -= Math.cos(o) * 0.35 * (dx / dist); f.orbit += dt * 0.4; }
+          for (const g of this.foes) { if (g === f || g.st === 'ko') continue; const ex = p.x - g.pos.x, ez = p.z - g.pos.z, e2 = ex * ex + ez * ez, rr = 2.4 * (T.scale || 1) * (g.T.scale || 1); if (e2 < rr && e2 > 1e-4) { mx += ex / e2 * 0.7; mz += ez / e2 * 0.7; } }
           const ml = Math.hypot(mx, mz);
-          if (ml > 0.05) { spd = T.spd * Math.min(1, ml); p.x += (mx / ml) * spd * dt; p.z += (mz / ml) * spd * dt; }
-          if (f.cd <= 0 && dist < T.reach + 0.4 && (attackers < 2 || f.k === 'boss') && Math.abs(hc.y - (p.y + 1)) < 2) { f.st = 'wind'; f.t = T.wind; }
+          if (ml > 0.05) { spd = T.spd * f.spdMul * Math.min(1, ml); p.x += (mx / ml) * spd * dt; p.z += (mz / ml) * spd * dt; }
+          const dy = Math.abs(hc.y - (p.y + 1));
+          if (f.cd > 0 || P.state === 'down') break;
+          if (ranged) { if (dist < 22 && dy < 12) { f.st = 'throw'; f.t = 0.55; } break; }
+          if (T.sp && dy < 2.2) {
+            const opts = T.sp.filter((k) => (f.counter || f.spc[k] <= 0) && dist >= GSP[k].min && dist <= GSP[k].max);
+            if (opts.length && (f.counter || Math.random() < dt * 2.5 + (dist < T.reach + 0.4 ? 0.5 : 0))) { this.startSp(f, opts[Math.floor(Math.random() * opts.length)], hc); mode = 'guard'; break; }
+          }
+          if (dist < T.reach + 0.4 && (T.named || attackers < cap) && dy < 2) { f.st = 'wind'; f.t = T.wind; if (!T.named) attackers++; }
+          f.counter = 0;
         }
       }
+      if (T.named === 2 && !this.reinf && f.st !== 'ko' && f.hp <= T.hp / 2) {
+        this.reinf = true; f.spdMul = 1.15;
+        toast('親分「野郎ども、やっちまえ！」', '子分が駆けつけた', 'bad');
+        const a = Math.random() * Math.PI * 2;
+        GANG_REINF.forEach((k, i) => this.spawnFoe(k, a + i * 1.4, 30, 0.4 + i * 0.3));
+      }
+      if (f.aura && f.st !== 'ko') f.aura.position.set(p.x, p.y + 0.19, p.z);
       f.d.root.position.copy(p); f.d.root.rotation.y = f.yaw;
       dudeAnim(f.d, mode, spd, dt);
     }
   },
   end() { TRAFFIC_BLOCK = null; },
-  obj() { return this.wave < 0 ? '広場へ' : `マフィアを全員倒せ（${this.kos}/${this.total}）`; },
-  bars() { const b = this.foes.find((f) => f.k === 'boss' && f.st !== 'ko'); return [['撃破', this.kos / this.total, 'var(--go)']].concat(b ? [['親分', b.hp / b.T.hp, 'var(--alarm)']] : []); },
+  obj() { return this.wave < 0 ? '広場へ' : `第${this.wave + 1}/${this.waves.length}波 — マフィアを倒せ（${this.kos}/${this.total}）`; },
+  bars() {
+    const b = [['撃破', this.kos / this.total, 'var(--go)']];
+    for (const f of this.foes) if (f.T.named && f.st !== 'ko' && b.length < 3) b.push([f.T.short, f.hp / f.T.hp, f.T.named === 2 ? 'var(--alarm)' : 'var(--signal)']);
+    return b;
+  },
   target() {
     let best = null, bd = 1e9;
-    for (const f of this.foes) if (f.st !== 'ko') { const d = f.pos.distanceTo(P.pos); if (d < bd) { bd = d; best = f; } }
+    for (const f of this.foes) if (f.st !== 'ko') { const d = f.pos.distanceTo(P.pos) - (f.T.named ? 8 : 0); if (d < bd) { bd = d; best = f; } }
     if (!best) return _mv2.copy(this.C).setY(this.C.y + 3);
-    return bd > 12 ? _mv2.copy(best.pos).setY(best.pos.y + 2.6) : null;
+    return bd > 12 ? _mv2.copy(best.pos).setY(best.pos.y + 2.6 * (best.T.scale || 1)) : null;
   }
 });
 
@@ -7086,10 +7691,12 @@ function mkKaiju() {
   g.scale.setScalar(KJ_S);
   return { g, hips, torso, legs, arms, neck, head, jaw, mouth, tail };
 }
-const KJ_S = 1.3;                                  // overall scale: about 90 m tall
+const KJ_S = 2.6;                                  // overall scale: about 180 m tall (was 1.3 / 90 m)
+const KJ_K = KJ_S / 1.3;                           // size relative to the original tuning
+const KJ_REACH = 62 + 30 * (KJ_K - 1);              // stops this far from Tokyo Tower to smash it (arms are longer)
 const TK_CANNONS = [new V3(-658, 262, -307), new V3(-618, 262, -307)];
 MSN.tk.push({
-  title: '巨大怪獣、東京へ！', goal: '都庁屋上の大砲で甲羅怪獣ゲンブを倒せ',
+  combat: true, title: '巨大怪獣、東京へ！', goal: '都庁屋上の大砲で甲羅怪獣ゲンブを倒せ',
   story: '富士山の方角から、巨大な甲羅を背負った怪獣「ゲンブ」が現れた！ 海を渡り、二本の足で地響きを立てながら東京タワーへ向かっている。街の人々は逃げ惑っている。都庁の屋上（東西の塔に1基ずつ）に大砲が用意されている。急いで向かい、E で大砲に乗り込んで撃ち落とせ。怪獣は炎を吐き、火の玉を飛ばしてくる。東京タワーが破壊されたらゲームオーバーだ。',
   keys: ['E：大砲に乗る（大砲の照準器の視点になる）／降りる', '大砲：マウスで照準、左クリック または F で発射、右クリックでズーム', '照準の輪が緑なら命中コース（怪獣の進みも計算済み）', '火の玉が飛んできたら E で降りて避けよう'],
   limit: 0, win: '甲羅怪獣ゲンブを撃退！ 東京タワーも無事だ。',
@@ -7097,7 +7704,7 @@ MSN.tk.push({
     this.path = [new V3(-2100, 0, 300), new V3(-1200, 0, 150), new V3(-760, 0, 60), new V3(-450, 0, 200), new V3(-180, 0, 320)];
     this.seg = 0; this.pos = this.path[0].clone(); this.vel = new V3(); this.yaw = Math.atan2(this.path[1].x - this.path[0].x, this.path[1].z - this.path[0].z);
     this.hp = 8; this.st = 'rise'; this.stT = 6; this.fireCD = 4; this.bombCD = 10; this.breath = null; this.dead = 0; this.ph = 0; this.lastStep = 0;
-    this.K = mkKaiju(); this.K.g.position.set(this.pos.x, -90, this.pos.z); this.K.g.rotation.y = this.yaw; MS.group.add(this.K.g);
+    this.K = mkKaiju(); this.K.g.position.set(this.pos.x, -70 * KJ_S, this.pos.z); this.K.g.rotation.y = this.yaw; MS.group.add(this.K.g);
     this.cans = TK_CANNONS.map((c) => {
       const M = (col) => new THREE.MeshLambertMaterial({ color: col }), cg = new THREE.Group();
       cg.add(msAt(new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.8, 1.6, 12), M(0x3a4048)), 0, 0.8, 0));
@@ -7115,7 +7722,7 @@ MSN.tk.push({
     this.bombs = []; this.can = null; this.reload = 0; this.prevM = false; this.zoom = false;
     this.panic = msPanic(120, 14);
     const self = this;
-    this.ent = msEnt({ pos: this.pos, r: 38, h: 90, hittable: false, webbable: true, prio: -3, center() { return _mv2.set(self.pos.x, self.pos.y + 55, self.pos.z); }, onWeb() { hint('ウェブでは歯が立たない — 都庁の大砲へ！', 1.2); } });
+    this.ent = msEnt({ pos: this.pos, r: 29 * KJ_S, h: 70 * KJ_S, hittable: false, webbable: true, prio: -3, center() { return _mv2.set(self.pos.x, self.pos.y + 42 * KJ_S, self.pos.z); }, onWeb() { hint('ウェブでは歯が立たない — 都庁の大砲へ！', 1.2); } });
     const hx = -180, hz = 331; P.pos.set(hx, groundAt(hx, hz, 135) + 0.05, hz); P.state = 'ground'; CAM.yaw = Math.atan2(-(this.path[0].x - hx), -(this.path[0].z - hz)); CAM.pitch = 0.08;
   },
   spheres(t) {                                        // hit volumes, optionally predicted t seconds ahead
@@ -7137,8 +7744,9 @@ MSN.tk.push({
       const d = _mv1.set(-Math.sin(yaw) * Math.cos(pit), Math.sin(pit), -Math.cos(yaw) * Math.cos(pit));
       c.yawG.rotation.y = Math.atan2(d.x, d.z); c.pitchG.rotation.x = -pit;
       P.pos.set(c.c.x - d.x * 2.5, c.c.y, c.c.z - d.z * 2.5); hero.visible = false;
-      /* sight view: just above the breech, looking down the barrel */
-      camera.position.set(c.c.x - d.x * 0.6, c.c.y + 4.7, c.c.z - d.z * 0.6);
+      /* sight view: a gunner's sight beside the breech (left of the barrel), so the barrel never hides the target */
+      const hl = Math.hypot(d.x, d.z) || 1, lx = d.z / hl, lz = -d.x / hl;            // unit vector to the left of the barrel
+      camera.position.set(c.c.x - d.x * 0.6 + lx * 2.1, c.c.y + 4.3, c.c.z - d.z * 0.6 + lz * 2.1);
       camera.lookAt(camera.position.x + d.x * 100, camera.position.y + d.y * 100, camera.position.z + d.z * 100);
       const fov = this.zoom ? 16 : 62; if (Math.abs(camera.fov - fov) > 0.05) { camera.fov += (fov - camera.fov) * 0.35; camera.updateProjectionMatrix(); }
       MS.aimSens = camera.fov / 70;
@@ -7177,13 +7785,13 @@ MSN.tk.push({
     const ly = landY(p.x, p.z), off = p.x < -770 || p.x > 770 || p.z < -770 || p.z > 1110, inSea = ly === null || off, floorY = inSea ? WATER_Y - 17 * KJ_S : ly;
     let spd = 0;
     if (this.st === 'rise') {
-      this.stT -= dt; const u = Math.max(0, this.stT / 6); p.y = floorY - 110 * u; this.vel.set(0, 0, 0);
+      this.stT -= dt; const u = Math.max(0, this.stT / 6); p.y = floorY - 85 * KJ_S * u; this.vel.set(0, 0, 0);
       CAM.shake = Math.max(CAM.shake, 0.08);
-      for (let k = 0; k < 3; k++) { const a = Math.random() * 6.28, r = 10 + Math.random() * 30, gy = inSea ? WATER_Y + 1 : floorY + 1; fxEmit('smoke', p.x + Math.cos(a) * r, gy, p.z + Math.sin(a) * r, Math.cos(a) * 5, inSea ? 14 + Math.random() * 10 : 6 + Math.random() * 6, Math.sin(a) * 5, inSea ? 2.2 : 3.2, inSea ? 0xdfe8ec : 0x8a8276, inSea ? 6 : -0.5, 0.6); }
+      for (let k = 0; k < 3; k++) { const a = Math.random() * 6.28, r = (10 + Math.random() * 30) * KJ_K, gy = inSea ? WATER_Y + 1 : floorY + 1; fxEmit('smoke', p.x + Math.cos(a) * r, gy, p.z + Math.sin(a) * r, Math.cos(a) * 5, inSea ? 14 + Math.random() * 10 : 6 + Math.random() * 6, Math.sin(a) * 5, inSea ? 2.2 : 3.2, inSea ? 0xdfe8ec : 0x8a8276, inSea ? 6 : -0.5, 0.6); }
       if (this.stT <= 0) { this.st = 'walk'; toast('富士山の方角に甲羅怪獣ゲンブが出現！', '東京タワーへ向かっている — 都庁の大砲へ急げ', 'big bad'); }
     } else if (this.st === 'dead') {
-      this.dead -= dt; K.g.rotation.x = Math.max(-1.35, K.g.rotation.x - dt * 0.32); p.y -= dt * 3;
-      if (Math.random() < 0.5) msBoom(_mv1.set(p.x + (Math.random() - 0.5) * 30, p.y + 20 + Math.random() * 40, p.z + (Math.random() - 0.5) * 30).clone(), 8, 0);
+      this.dead -= dt; K.g.rotation.x = Math.max(-1.35, K.g.rotation.x - dt * 0.32); p.y -= dt * 3 * KJ_K;
+      if (Math.random() < 0.5) msBoom(_mv1.set(p.x + (Math.random() - 0.5) * 30 * KJ_K, p.y + (20 + Math.random() * 40) * KJ_K, p.z + (Math.random() - 0.5) * 30 * KJ_K).clone(), 8 * KJ_K, 0);
       if (this.dead <= 0) { msWin(); return; }
     } else if (this.st === 'smash') {
       this.stT -= dt; K.arms.forEach((a, i) => { a.sh.rotation.x = -2.2 + Math.sin(CLOCK * 5 + i * 3) * 0.9; });
@@ -7197,7 +7805,7 @@ MSN.tk.push({
         spd = inSea ? 8.5 : 6.5;
         if (L > 1) { p.x += (dx / L) * spd * dt; p.z += (dz / L) * spd * dt; this.vel.set((dx / L) * spd, 0, (dz / L) * spd); }
         let a = Math.atan2(dx, dz) - this.yaw; a = Math.atan2(Math.sin(a), Math.cos(a)); this.yaw += a * Math.min(1, dt * 0.5);
-        if (Math.hypot(p.x + 180, p.z - 320) < 62) { this.st = 'smash'; this.stT = 2.6; this.vel.set(0, 0, 0); toast('東京タワーが…！', null, 'big bad'); }
+        if (Math.hypot(p.x + 180, p.z - 320) < KJ_REACH) { this.st = 'smash'; this.stT = 2.6; this.vel.set(0, 0, 0); toast('東京タワーが…！', null, 'big bad'); }
       }
       p.y += (floorY - p.y) * Math.min(1, dt * 0.8);
       const dist = Math.hypot(hc.x - p.x, hc.z - p.z);
@@ -7210,9 +7818,9 @@ MSN.tk.push({
       const mp = this.mouthPos();
       if (B.t > 1.0) {
         const dir = _mv1.subVectors(hc, mp).normalize();
-        for (let k = 0; k < 5; k++) fxEmit('fire', mp.x, mp.y, mp.z, dir.x * 75 + (Math.random() - 0.5) * 10, dir.y * 75 + (Math.random() - 0.5) * 10, dir.z * 75 + (Math.random() - 0.5) * 10, 2.8, k % 2 ? 0xff6a1a : 0xffb040, -2, 0.4);
+        for (let k = 0; k < 7; k++) fxEmit('fire', mp.x + (Math.random() - 0.5) * 4 * KJ_K, mp.y, mp.z + (Math.random() - 0.5) * 4 * KJ_K, dir.x * 100 + (Math.random() - 0.5) * 14, dir.y * 100 + (Math.random() - 0.5) * 14, dir.z * 100 + (Math.random() - 0.5) * 14, 2.8, k % 2 ? 0xff6a1a : 0xffb040, -2, 0.4);
         B.hitT = (B.hitT || 0) - dt;
-        if (B.hitT <= 0 && mp.distanceTo(hc) < 210 && P.iframe <= 0) { B.hitT = 0.4; hurt(9, '怪獣の炎'); }
+        if (B.hitT <= 0 && mp.distanceTo(hc) < 270 && P.iframe <= 0) { B.hitT = 0.4; hurt(9, '怪獣の炎'); }
       } else if (Math.random() < 0.6) fxEmit('fire', mp.x, mp.y, mp.z, 0, 1, 0, 0.4, 0xffd080, 0, 0);
       if (B.t > 3.2) { this.breath = null; K.jaw.rotation.x = 0.05; K.mouth.visible = false; }
     } else if (this.st === 'walk') K.jaw.rotation.x = 0.05 + Math.max(0, Math.sin(CLOCK * 0.9)) * 0.1;
@@ -7226,7 +7834,7 @@ MSN.tk.push({
     }
     this.bombs = this.bombs.filter((b) => !b.done);
     /* two-legged walk: hips swing, knees fold on the trailing leg, arms counter-swing, upper body sways */
-    if (spd > 0) this.ph += (spd / 13) * Math.PI * dt;
+    if (spd > 0) this.ph += (spd / (13 * KJ_K)) * Math.PI * dt;   // longer legs → slower, heavier stride
     const s = Math.sin(this.ph), c = Math.cos(this.ph), w = spd > 0 ? 1 : 0;
     K.legs[0].hip.rotation.x = -s * 0.42 * w; K.legs[1].hip.rotation.x = s * 0.42 * w;
     K.legs[0].knee.rotation.x = (0.08 + Math.max(0, c) * 0.75) * w; K.legs[1].knee.rotation.x = (0.08 + Math.max(0, -c) * 0.75) * w;
@@ -7236,10 +7844,10 @@ MSN.tk.push({
     K.head.rotation.x = this.breath ? 0.2 : Math.sin(CLOCK * 0.7) * 0.05;
     if (w && Math.abs(c) < 0.06 && CLOCK - this.lastStep > 0.8) {
       this.lastStep = CLOCK; const fd = hc.distanceTo(p);
-      CAM.shake = Math.max(CAM.shake, clamp(0.45 - fd / 1600, 0.04, 0.4));
+      CAM.shake = Math.max(CAM.shake, clamp(0.55 - fd / 2000, 0.06, 0.5));
       const f = K.legs[s > 0 ? 1 : 0].ank.getWorldPosition(new V3());
-      if (inSea) for (let k = 0; k < 14; k++) fxEmit('smoke', f.x + (Math.random() - 0.5) * 16, WATER_Y + 1, f.z + (Math.random() - 0.5) * 16, (Math.random() - 0.5) * 8, 10 + Math.random() * 8, (Math.random() - 0.5) * 8, 1.8, 0xdfe8ec, 9, 0.5);
-      else fxBurst('smoke', f.setY(p.y + 1), 14, 10, 1.6, 0x7a746c, -1, 1.4);
+      if (inSea) for (let k = 0; k < 20; k++) fxEmit('smoke', f.x + (Math.random() - 0.5) * 16 * KJ_K, WATER_Y + 1, f.z + (Math.random() - 0.5) * 16 * KJ_K, (Math.random() - 0.5) * 8 * KJ_K, (10 + Math.random() * 8) * KJ_K, (Math.random() - 0.5) * 8 * KJ_K, 1.8, 0xdfe8ec, 9, 0.5);
+      else fxBurst('smoke', f.setY(p.y + 1), 20, 10 * KJ_K, 1.6, 0x7a746c, -1, 1.4);
     }
     K.g.position.set(p.x, p.y, p.z); K.g.rotation.y = this.yaw;
     /* sight view: predicted shell path against where the monster will be */
@@ -7263,7 +7871,7 @@ MSN.tk.push({
     const o = this.mouthPos(), hc = hpos(), T = clamp(dist / 230, 3, 7.5);
     const tx = hc.x + (k - 1) * 11 + (Math.random() - 0.5) * 8, tz = hc.z + (Math.random() - 0.5) * 12, ty = groundAt(tx, tz, hc.y + 2);
     const v = new V3((tx - o.x) / T, (ty - o.y) / T + 0.5 * G * 0.5 * T, (tz - o.z) / T);
-    const m = new THREE.Mesh(new THREE.SphereGeometry(1.8, 10, 8), new THREE.MeshBasicMaterial({ color: 0xff5a1a })); MS.group.add(m);
+    const m = new THREE.Mesh(new THREE.SphereGeometry(1.8 * Math.sqrt(KJ_K), 10, 8), new THREE.MeshBasicMaterial({ color: 0xff5a1a })); MS.group.add(m);
     const ring = new THREE.Mesh(new THREE.RingGeometry(8, 10, 32), new THREE.MeshBasicMaterial({ color: 0xff2a1a, transparent: true, opacity: 0.5, depthWrite: false }));
     ring.rotation.x = -Math.PI / 2; ring.position.set(tx, ty + 0.15, tz); MS.group.add(ring);
     this.bombs.push({ p: o.clone(), v, T, t: 0, m, ring, tx, tz });
@@ -7274,7 +7882,7 @@ MSN.tk.push({
     if (this.can) return this.reload > 0 ? '装填中…' : '照準の輪が緑になったら発射！（右クリックでズーム）';
     return this.nearCan() ? 'E で大砲に乗り込め' : '都庁の屋上（東西の塔）の大砲へ急げ';
   },
-  bars() { const d = Math.hypot(this.pos.x + 180, this.pos.z - 320); return [['怪獣', this.hp / 8, 'var(--alarm)'], ['東京タワーまで', clamp((d - 62) / 1900, 0, 1), 'var(--line-y)']]; },
+  bars() { const d = Math.hypot(this.pos.x + 180, this.pos.z - 320); return [['怪獣', this.hp / 8, 'var(--alarm)'], ['東京タワーまで', clamp((d - KJ_REACH) / 1900, 0, 1), 'var(--line-y)']]; },
   prompt() { if (!this.can && this.nearCan()) return 'E：大砲に乗る'; if (this.can) return `E：降りる　左クリック／F：発射　右クリック：ズーム${this.zoom ? '中' : ''}`; return null; },
   target() {
     if (this.can) return null;
@@ -7379,6 +7987,402 @@ MSN.tk.push({
   prompt() { if (this.fall || this.done) return null; const e = this.eta(); return `倒壊まで 約${Math.max(0, Math.round(e))}秒`; },
   target() { const p = this.pts.find((q) => !q.tether); return p ? _mv2.copy(p.w) : null; }
 });
+/* =====================================================================
+   PEDESTRIANS — sidewalk crowds on every block (GPU-animated instances),
+   and passers-by who fight back when the hero hits them
+   ===================================================================== */
+let PED_EXTRA = [];                                  // peds driven by a stage script (Shibuya scramble)
+const PEDS = { list: [], blocks: [], ents: [], prox: [], angry: [], group: null, mesh: null, warnT: -99, lastFx: 0 };
+const PED_MAX_ANGRY = 8;
+
+/* ---------- shared figure: same proportions as mkDude, every vertex tagged with limb / segment / colour slot ---------- */
+const PED_VS_HEAD = `
+attribute vec3 aPart;
+attribute vec4 iAnim;
+attribute vec3 iTop;
+attribute vec3 iBot;
+attribute vec3 iSkin;
+attribute vec4 iHair;
+mat3 pedRotX(float a) { float c = cos(a), s = sin(a); return mat3(1.0, 0.0, 0.0, 0.0, c, s, 0.0, -s, c); }
+void pedPose(inout vec3 p, inout vec3 n) {
+  float ph = iAnim.x, amp = iAnim.y, pose = iAnim.z;
+  float s = sin(ph), c = cos(ph);
+  float lL = s * 0.9 * amp, lR = -lL;
+  float kL = (0.15 + max(0.0, -c) * 1.1) * amp, kR = (0.15 + max(0.0, c) * 1.1) * amp;
+  float aL = -s * 0.8 * amp, aR = -aL, eL = -0.5 * amp - 0.12, eR = eL;
+  float lean = 0.12 * amp + iAnim.w;
+  if (pose > 0.5 && pose < 1.5) { aL = -0.34; eL = -1.25; aR = -0.4; eR = -1.38; }                 // looking at a phone
+  else if (pose > 1.5 && pose < 2.5) { aL = -2.7 + 0.35 * s; aR = -2.7 - 0.35 * s; eL = -0.35; eR = -0.35; }   // running away, hands up
+  else if (pose > 2.5) { float b = sin(ph * 0.25) * 0.04; aL = b; aR = -b; }                         // standing
+  float limb = aPart.x, seg = aPart.y;
+  if (limb > 2.5) {
+    bool L = limb < 3.5;
+    vec3 hp = vec3(L ? -0.1 : 0.1, 0.97, 0.0);
+    if (seg > 0.5) { vec3 kn = hp + vec3(0.0, -0.43, 0.0); mat3 r = pedRotX(L ? kL : kR); p = kn + r * (p - kn); n = r * n; }
+    mat3 r = pedRotX(-(L ? lL : lR)); p = hp + r * (p - hp); n = r * n;
+  } else {
+    if (limb > 0.5) {
+      bool L = limb < 1.5;
+      vec3 sh = vec3(L ? -0.25 : 0.25, 1.55, 0.0);
+      if (seg > 0.5) { vec3 el = sh + vec3(0.0, -0.28, 0.0); mat3 r = pedRotX(L ? eL : eR); p = el + r * (p - el); n = r * n; }
+      mat3 r = pedRotX(L ? aL : aR); p = sh + r * (p - sh); n = r * n;
+    }
+    vec3 hip = vec3(0.0, 0.95, 0.0);
+    mat3 r = pedRotX(lean); p = hip + r * (p - hip); n = r * n;
+  }
+  p.y += (abs(c) * 0.035 - 0.015) * min(amp, 1.0);
+}
+`;
+function pedMaterials() {
+  if (PEDS.mat) return PEDS.mat;
+  const m = new THREE.MeshLambertMaterial({ vertexColors: true });
+  m.userData.keep = true;
+  m.onBeforeCompile = (sh) => {
+    sh.vertexShader = PED_VS_HEAD + sh.vertexShader
+      .replace('#include <beginnormal_vertex>', 'vec3 pedP = vec3(position);\nvec3 objectNormal = vec3(normal);\npedPose(pedP, objectNormal);')
+      .replace('#include <begin_vertex>', 'vec3 transformed = pedP;')
+      .replace('#include <color_vertex>', `#include <color_vertex>
+  { float sl = aPart.z; vec3 tint = vec3(1.0);
+    if (sl > 0.5 && sl < 1.5) tint = iTop; else if (sl > 1.5 && sl < 2.5) tint = iBot; else if (sl > 2.5 && sl < 3.5) tint = iSkin; else if (sl > 3.5 && sl < 4.5) tint = iHair.xyz;
+    else if (sl > 4.5) tint = iHair.w > 0.5 ? iSkin : iTop;
+    vColor.xyz *= tint; }`);
+  };
+  const d = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
+  d.userData.keep = true;
+  d.onBeforeCompile = (sh) => {
+    sh.vertexShader = PED_VS_HEAD + sh.vertexShader.replace('#include <begin_vertex>', 'vec3 transformed = vec3(position); vec3 pedN0 = vec3(0.0, 1.0, 0.0); pedPose(transformed, pedN0);');
+  };
+  PEDS.mat = { m, d };
+  return PEDS.mat;
+}
+/* merges tagged pieces into one geometry: slot 0 keeps its own colour, 1 top, 2 bottom, 3 skin, 4 hair, 5 sleeve (top or skin) */
+function pedCap(r0, r1, len, seg, lq) {               // light capsule: rounded ends with few profile rings
+  const pts = lq ? [[0.0001, -len - r1 * 0.5], [r1, -len], [r0, 0], [0.0001, r0 * 0.5]]
+    : [[0.0001, -len - r1 * 0.85], [r1 * 0.75, -len - r1 * 0.55], [r1, -len], [r0, 0], [r0 * 0.75, r0 * 0.55], [0.0001, r0 * 0.85]];
+  return latheGeo(pts, seg);
+}
+function pedGeo(lq, skirt) {
+  const seg = lq ? 5 : 10, cs = lq ? 4 : 7, pieces = [];
+  const put = (geo, mtx, limb, sg, slot, col) => { pieces.push({ geo: geo.index ? geo.toNonIndexed() : geo, mtx, limb, sg, slot, col: col === undefined ? 0xffffff : col }); };
+  const M = (x, y, z, sx, sy, sz) => new THREE.Matrix4().compose(new V3(x, y, z), new THREE.Quaternion(), new V3(sx || 1, sy || 1, sz || 1));
+  const H = 0.95;                                                    // hips
+  put(latheGeo(lq ? [[0.001, -0.02], [0.16, 0.05], [0.2, 0.45], [0.17, 0.6], [0.001, 0.66]] : [[0.001, -0.02], [0.15, 0.0], [0.165, 0.12], [0.16, 0.26], [0.2, 0.42], [0.21, 0.5], [0.18, 0.58], [0.09, 0.64], [0.001, 0.66]], seg), M(0, H, 0, 1, 1, 0.66), 0, 0, 1);
+  put(latheGeo(lq ? [[0.001, -0.05], [0.17, 0.02], [0.001, 0.17]] : [[0.001, -0.05], [0.16, -0.02], [0.175, 0.08], [0.16, 0.16], [0.001, 0.17]], seg), M(0, H, 0, 1.02, 1, 0.68), 0, 0, 2);
+  if (!lq) put(new THREE.CylinderGeometry(0.05, 0.06, 0.08, 8, 1, true), M(0, H + 0.69, 0), 0, 0, 3);
+  put(new THREE.SphereGeometry(0.12, lq ? 6 : 12, lq ? 4 : 9), M(0, H + 0.82, 0, 0.92, 1.08, 1), 0, 0, 3);
+  put(new THREE.SphereGeometry(0.127, lq ? 6 : 12, lq ? 3 : 5, 0, Math.PI * 2, 0, Math.PI * 0.55), M(0, H + 0.834, -0.012, 0.95, 1.08, 1.03), 0, 0, 4);
+  if (skirt) {
+    put(new THREE.CylinderGeometry(0.165, 0.27, 0.44, seg, 1, true), M(0, H - 0.14, 0, 1, 1, 0.78), 0, 0, 2);
+    put(new THREE.SphereGeometry(0.13, lq ? 5 : 10, lq ? 3 : 6, 0, Math.PI, 0, Math.PI), M(0, H + 0.73, -0.045, 1.02, 1.6, 0.62).multiply(new THREE.Matrix4().makeRotationY(Math.PI / 2)), 0, 0, 4);
+  }
+  for (const [limb, x] of [[1, -0.25], [2, 0.25]]) {
+    put(pedCap(0.055, 0.046, 0.28, cs, lq), M(x, H + 0.6, 0), limb, 0, 1);
+    put(pedCap(0.046, 0.04, 0.266, cs, lq), M(x, H + 0.6 - 0.28, 0), limb, 1, 5);
+    if (!lq) put(new THREE.SphereGeometry(0.05, 6, 4), M(x, H + 0.6 - 0.28 - 0.26, 0), limb, 1, 3);
+  }
+  for (const [limb, x] of [[3, -0.1], [4, 0.1]]) {
+    put(pedCap(0.075, 0.063, 0.43, cs, lq), M(x, 0.97, 0), limb, 0, skirt ? 3 : 2);
+    put(pedCap(0.063, 0.054, 0.41, cs, lq), M(x, 0.97 - 0.43, 0), limb, 1, skirt ? 3 : 2);
+    put(new THREE.BoxGeometry(0.11, 0.07, 0.25), M(x, 0.97 - 0.43 - 0.42 - 0.03, 0.05), limb, 1, 0, skirt ? 0x3a2a26 : 0x1c1c1e);
+  }
+  let n = 0; for (const p of pieces) n += p.geo.attributes.position.count;
+  const pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), col = new Float32Array(n * 3), part = new Float32Array(n * 3);
+  const v = new V3(), nm = new THREE.Matrix3(), c = new THREE.Color();
+  let o = 0;
+  for (const p of pieces) {
+    const P0 = p.geo.attributes.position, N0 = p.geo.attributes.normal; nm.getNormalMatrix(p.mtx); c.set(p.col);
+    for (let i = 0; i < P0.count; i++, o++) {
+      v.fromBufferAttribute(P0, i).applyMatrix4(p.mtx); pos[o * 3] = v.x; pos[o * 3 + 1] = v.y; pos[o * 3 + 2] = v.z;
+      v.fromBufferAttribute(N0, i).applyMatrix3(nm).normalize(); nor[o * 3] = v.x; nor[o * 3 + 1] = v.y; nor[o * 3 + 2] = v.z;
+      col[o * 3] = c.r; col[o * 3 + 1] = c.g; col[o * 3 + 2] = c.b;
+      part[o * 3] = p.limb; part[o * 3 + 1] = p.sg; part[o * 3 + 2] = p.slot;
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3)); g.setAttribute('aPart', new THREE.BufferAttribute(part, 3));
+  return g;
+}
+function pedMesh(geo, cap, shadow) {
+  const { m, d } = pedMaterials();
+  const ia = (k, sz) => { const a = new THREE.InstancedBufferAttribute(new Float32Array(cap * sz), sz); a.setUsage(THREE.DynamicDrawUsage); geo.setAttribute(k, a); return a; };
+  const mesh = new THREE.InstancedMesh(geo, m, cap);
+  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  mesh.frustumCulled = false; mesh.count = 0; mesh.castShadow = !!shadow; mesh.receiveShadow = false;
+  if (shadow) mesh.customDepthMaterial = d;
+  mesh.userData.at = { anim: ia('iAnim', 4), top: ia('iTop', 3), bot: ia('iBot', 3), skin: ia('iSkin', 3), hair: ia('iHair', 4) };
+  return mesh;
+}
+
+/* ---------- palettes ---------- */
+const PED_PAL = {
+  nyc: { top: [0x1f2a44, 0x2b2b2e, 0x6b4a2f, 0x8a6a48, 0x5a1f24, 0x4a5a3a, 0x7a7d82, 0xb9a27c, 0x2f4f6f, 0xe8e4dc, 0x9a2b2b, 0x3c3c44], bot: [0x2c3e5c, 0x1e1f24, 0x3a3f4a, 0x4a3d32, 0x6a6e74, 0x223350],
+    skin: [0xf0c8a8, 0xe3b48f, 0xc89272, 0xa86e4e, 0x7c4e34, 0x5a3626, 0xd9a77e], hair: [0x1d1712, 0x2e2018, 0x5a3a22, 0x8a6a3a, 0xc8a868, 0x7a7a7a, 0x3a2414] },
+  hk: { top: [0xf2f2f0, 0x222226, 0x3a5a8a, 0xd8d0c0, 0x8aa0b8, 0xc85a5a, 0x5a7a5a, 0xe8c8d0, 0x4a4a52, 0xf0e0a0, 0x2a6a6a], bot: [0x2c3e5c, 0x1e1f24, 0x4a4a50, 0xd8d0c0, 0x5a4a3a, 0x283a5a],
+    skin: [0xf0d0b0, 0xe8c09a, 0xd8ac84, 0xc89a72, 0xb08060], hair: [0x141210, 0x1d1712, 0x2a1e16, 0x4a3420, 0x6a6a6a] },
+  tk: { top: [0x1c1c20, 0x2a2e3a, 0x5a5e66, 0xd8d0c0, 0xf2f2f0, 0x2a3a5a, 0x6a5a48, 0x8a7a6a, 0x3a4a3a, 0xb0a090, 0x8a2a2a], bot: [0x1e1f24, 0x2c3e5c, 0x3a3a40, 0x6a6058, 0x2a2a30, 0xb0a890],
+    skin: [0xf2d4b6, 0xebc6a2, 0xdcb08c, 0xcfa07a], hair: [0x141210, 0x1d1712, 0x2e2018, 0x5a3a22, 0x7a5a3a, 0x707070] }
+};
+
+/* ---------- build: a walking loop around every block's sidewalk ---------- */
+function pedRect(b, e) { const x0 = b.minX + e, x1 = b.maxX - e, z0 = b.minZ + e, z1 = b.maxZ - e; return { x0, x1, z0, z1, w: x1 - x0, h: z1 - z0, L: 2 * (x1 - x0 + z1 - z0) }; }
+function pedAt(r, s, out) {                          // point s along a rectangle loop → out {x, z, fx, fz}
+  s = ((s % r.L) + r.L) % r.L;
+  if (s < r.w) { out.x = r.x0 + s; out.z = r.z0; out.fx = 1; out.fz = 0; }
+  else if ((s -= r.w) < r.h) { out.x = r.x1; out.z = r.z0 + s; out.fx = 0; out.fz = 1; }
+  else if ((s -= r.h) < r.w) { out.x = r.x1 - s; out.z = r.z1; out.fx = -1; out.fz = 0; }
+  else { s -= r.w; out.x = r.x0; out.z = r.z1 - s; out.fx = 0; out.fz = -1; }
+  return out;
+}
+function pedNearestS(r, x, z) {                      // closest loop parameter to a point
+  const cx = clamp(x, r.x0, r.x1), cz = clamp(z, r.z0, r.z1);
+  const d = [Math.abs(cz - r.z0), Math.abs(cx - r.x1), Math.abs(cz - r.z1), Math.abs(cx - r.x0)], k = d.indexOf(Math.min(...d));
+  if (k === 0) return cx - r.x0;
+  if (k === 1) return r.w + (cz - r.z0);
+  if (k === 2) return r.w + r.h + (r.x1 - cx);
+  return 2 * r.w + r.h + (r.z1 - cz);
+}
+const _pa = { x: 0, z: 0, fx: 0, fz: 1 };
+function buildPeds() {
+  PEDS.list = []; PEDS.blocks = []; PEDS.ents = []; PEDS.prox = []; PEDS.angry = [];
+  const pal = PED_PAL[STAGE.id] || PED_PAL.nyc, rnd = mulberry((STAGE.seed || 7) * 31 + 5), pk = (a) => a[Math.floor(rnd() * a.length)];
+  const hot = (STAGE.spots || []).map((s) => [s.x, s.z]);
+  const mkPed = (o) => {
+    const p = Object.assign({ st: 'walk', s0: 0, t0: 0, spd: 1.3, dir: 1, ph0: rnd() * 6.28, amp: 0.45, pose: 0, lean: 0, x: 0, y: 0.14, z: 0, yaw: 0,
+      top: pk(pal.top), bot: pk(pal.bot), skin: pk(pal.skin), hair: pk(pal.hair), sleeve: rnd() < (STAGE.id === 'hk' ? 0.55 : 0.2) ? 1 : 0, skirt: rnd() < 0.3, sc: 0.9 + rnd() * 0.16 }, o);
+    if (p.skirt) p.sleeve = rnd() < 0.5 ? 1 : 0;
+    PEDS.list.push(p); return p;
+  };
+  for (const b of BLOCKS) {
+    const W = b.maxX - b.minX, D = b.maxZ - b.minZ;
+    if (W < 9 || D < 9) continue;
+    const r0 = pedRect(b, 1.2);
+    /* find where the sidewalk is free (no building, statue or tree trunk in the way) */
+    const N = Math.max(8, Math.floor(r0.L / 2)), free = [];
+    let y = 0.14, anyFree = false;
+    for (let i = 0; i < N; i++) {
+      pedAt(r0, (i / N) * r0.L, _pa);
+      if (landY(_pa.x, _pa.z) === null) { free.push(false); continue; }
+      const g = groundAt(_pa.x, _pa.z, 4);
+      const ok = !inCols(_mv1.set(_pa.x, g + 0.5, _pa.z)) && !inCols(_mv1.set(_pa.x, g + 1.4, _pa.z)) && Math.abs(g) < 1.2;
+      free.push(ok); if (ok) { anyFree = true; y = g + 0.14; }
+    }
+    if (!anyFree) continue;
+    let run = null;
+    if (free.some((f) => !f)) {                      // walk back and forth along the longest clear stretch
+      let best = 0, bs = 0;
+      for (let i = 0; i < N; i++) { if (!free[i] || free[(i - 1 + N) % N]) continue; let k = 0; while (k < N && free[(i + k) % N]) k++; if (k > best) { best = k; bs = i; } }
+      if (best * (r0.L / N) < 14) continue;
+      run = { a: (bs / N) * r0.L + 1, len: (best / N) * r0.L - 2 };
+    }
+    const cx = (b.minX + b.maxX) / 2, cz = (b.minZ + b.maxZ) / 2;
+    const busy = hot.some(([hx, hz]) => Math.hypot(hx - cx, hz - cz) < 150) ? 1.7 : 1;
+    const dens = { nyc: 1.25, hk: 1.9, tk: 1.25 }[STAGE.id] || 1;
+    const n = Math.max(1, Math.round((r0.L / 38) * busy * dens * (0.75 + rnd() * 0.5)));
+    const blk = { b, cx, cz, rad: Math.hypot(W, D) / 2 + 2, y, peds: [] };
+    for (let k = 0; k < n; k++) {
+      const dir = rnd() < 0.5 ? 1 : -1, e = dir > 0 ? 0.85 + rnd() * 0.35 : 1.35 + rnd() * 0.35;   // keep-left lanes so walkers don't merge
+      const r = pedRect(b, e), idle = rnd() < 0.12;
+      const p = mkPed({ blk, r, run: run ? { a: run.a, len: Math.min(run.len, r.L - run.a) } : null, dir, s0: rnd() * (run ? run.len : r.L), spd: idle ? 0 : 1.05 + rnd() * 0.55, y });
+      if (idle) { p.pose = rnd() < 0.6 ? 1 : 3; p.amp = 0; p.dir = 1; }
+      blk.peds.push(p);
+    }
+    PEDS.blocks.push(blk);
+  }
+  /* stage-driven crowds (Shibuya scramble) */
+  if (PED_EXTRA.length) {
+    const blk = { b: null, cx: 0, cz: 0, rad: 1e9, y: 0.02, peds: [], extra: true };
+    for (const q of PED_EXTRA) blk.peds.push(q.ped = mkPed({ blk, ext: q, y: 0.02 }));
+    PEDS.blocks.push(blk);
+  }
+  const cap = 900;
+  PEDS.mesh = { a: pedMesh(pedGeo(false, false), 320, true), b: pedMesh(pedGeo(false, true), 240, true), lq: pedMesh(pedGeo(true, false), cap, false) };
+  PEDS.group = new THREE.Group();
+  for (const k of ['a', 'b', 'lq']) PEDS.group.add(PEDS.mesh[k]);
+  WORLD.add(PEDS.group);
+  PEDS.cnt = PEDS.list.length;
+}
+
+/* ---------- per-frame: positions, LOD packing, who can be hit ---------- */
+function pedPos(p, t) {
+  if (p.ext) { p.x = p.ext.x; p.z = p.ext.z; p.yaw = p.ext.yaw; return; }
+  const u = p.s0 + p.spd * (t - p.t0);
+  let s, back = false;
+  if (p.run) { const L = Math.max(1, p.run.len), v = ((u % (2 * L)) + 2 * L) % (2 * L); back = v >= L; s = p.run.a + (back ? 2 * L - v : v); }
+  else s = u;
+  if (p.dir < 0) s = (p.run ? p.run.a + p.run.len - (s - p.run.a) : -s);
+  pedAt(p.r, s, _pa);
+  p.x = _pa.x; p.z = _pa.z;
+  if (p.spd > 0) { const sg = (back ? -1 : 1) * p.dir; p.yaw = Math.atan2(_pa.fx * sg, _pa.fz * sg); }
+  p.sNow = s;
+}
+function pedRebase(p, t, spd, dir) {                  // change speed/direction without a jump in position
+  pedPos(p, t);
+  p.ph0 = pedPhase(p, t); p.tp = t;
+  if (p.run) { p.s0 = p.s0 + p.spd * (t - p.t0); p.t0 = t; p.spd = spd; return; }   // back-and-forth walkers keep their stretch
+  const s = p.sNow;
+  p.dir = dir; p.spd = spd; p.t0 = t;
+  p.s0 = dir > 0 ? s : -s;
+}
+function pedPhase(p, t) { return p.ph0 + (t - (p.tp || 0)) * p.spd * (p.spd > 2.5 ? 3.1 : 4.2); }
+const _pm = new THREE.Matrix4(), _pq = new THREE.Quaternion(), _pc = new THREE.Color(), _py = new V3(0, 1, 0);
+function pedWrite(mesh, p, t) {
+  const i = mesh.count++, A = mesh.userData.at;
+  _pq.setFromAxisAngle(_py, p.yaw);
+  _pm.compose(_mv1.set(p.x, p.y, p.z), _pq, _mv2.set(p.sc, p.sc, p.sc)); mesh.setMatrixAt(i, _pm);
+  A.anim.setXYZW(i, pedPhase(p, t), p.amp, p.pose, p.lean);
+  _pc.set(p.top); A.top.setXYZ(i, _pc.r, _pc.g, _pc.b);
+  _pc.set(p.bot); A.bot.setXYZ(i, _pc.r, _pc.g, _pc.b);
+  _pc.set(p.skin); A.skin.setXYZ(i, _pc.r, _pc.g, _pc.b);
+  _pc.set(p.hair); A.hair.setXYZW(i, _pc.r, _pc.g, _pc.b, p.sleeve);
+}
+function pedsUpdate(dt) {
+  if (!PEDS.mesh) return;
+  const t = CLOCK, M = PEDS.mesh, hi = QUALITY.level === 'high';
+  const R = QUALITY.vehR + 20, Rh = hi ? 46 : 28, ref = GAME.started && !MS.camHook ? P.pos : camera.position, cx = ref.x, cz = ref.z;
+  const TB = TRAFFIC_BLOCK, free = GAME.started && !MS.cur;
+  for (const k in M) M[k].count = 0;
+  PEDS.prox.length = 0;
+  const hx = P.pos.x, hz = P.pos.z;
+  for (const B of PEDS.blocks) {
+    if (!B.extra && Math.hypot(B.cx - cx, B.cz - cz) > R + B.rad) continue;
+    for (const p of B.peds) {
+      if (p.st === 'angry' || p.st === 'gone') continue;
+      if (p.st === 'flee' && t > p.fleeT) { p.st = 'walk'; pedRebase(p, t, p.walkSpd, p.dir); p.amp = 0.45; p.pose = p.pose0 === 1 ? 1 : 0; p.lean = 0; }
+      pedPos(p, t);
+      if (TB && Math.hypot(p.x - TB.x, p.z - TB.z) < TB.r) continue;
+      const d = Math.hypot(p.x - cx, p.z - cz);
+      if (d > R) continue;
+      const mesh = d < Rh ? (p.skirt ? M.b : M.a) : M.lq;
+      if (mesh.count < mesh.userData.at.anim.count) pedWrite(mesh, p, t);
+      if (free && Math.abs(p.x - hx) < 16 && Math.abs(p.z - hz) < 16 && PEDS.prox.length < 24) PEDS.prox.push(p);
+    }
+  }
+  for (const k in M) { const A = M[k].userData.at; M[k].instanceMatrix.needsUpdate = true; for (const a in A) A[a].needsUpdate = true; }
+  /* walking passers-by near the hero become targets for E and webs */
+  PEDS.ents.length = 0;
+  if (free) {
+    for (const p of PEDS.prox) {
+      if (!p.ent) p.ent = pedProxy(p);
+      p.ent.pos.set(p.x, p.y, p.z); p.ent.alive = true;
+      PEDS.ents.push(p.ent);
+    }
+  }
+  for (const a of PEDS.angry) if (a.ent.alive) PEDS.ents.push(a.ent);
+  if (GAME.started) angryUpdate(dt);
+}
+function pedProxy(p) {
+  return { ped: p, pos: new V3(), r: 0.32 * p.sc, h: 1.8 * p.sc, alive: true, hittable: true, webbable: true, prio: -2,
+    center() { return _mv2.set(this.pos.x, this.pos.y + 1.05 * p.sc, this.pos.z); },
+    onHit(dmg, dir, kind, knock) { const a = pedProvoke(p, dir); if (a) a.ent.onHit(dmg, dir, kind, knock); },
+    onWeb(dir, net) { const a = pedProvoke(p, dir); if (a) a.ent.onWeb(dir, net); } };
+}
+
+/* ---------- provoked: the passer-by turns into a full rigged brawler ---------- */
+function pedProvoke(p, dir, quiet) {
+  if (p.st === 'angry') return p.angry;
+  if (PEDS.angry.length >= PED_MAX_ANGRY) { pedFlee(p); return null; }
+  pedPos(p, CLOCK);
+  const d = mkDude({ top: p.top, bottom: p.bot, skin: p.skin, hair: p.hair, sleeve: p.sleeve ? 'short' : null, scale: p.sc });
+  if (p.skirt) {
+    const sk = d.add(new THREE.CylinderGeometry(0.165, 0.27, 0.44, 14, 1, true), d.L(p.bot), d.rig, 0, -0.14, 0); sk.scale.z = 0.78;
+    const lh = d.add(new THREE.SphereGeometry(0.13, 12, 8, 0, Math.PI, 0, Math.PI), d.L(p.hair), d.head, 0, -0.09, -0.045); lh.rotation.y = Math.PI / 2; lh.scale.set(1.02, 1.6, 0.62);
+    for (const lg of [d.legL, d.legR]) lg.low.children[0].material = d.L(p.skin);
+  }
+  d.coc = mkCocoon(0.38, 1.8); d.root.add(d.coc);
+  PEDS.group.add(d.root);
+  const a = { ped: p, d, pos: new V3(p.x, p.y - 0.14, p.z), vel: new V3(), yaw: p.yaw, hp: 3, st: 'react', t: 0.45, cd: 0.6 + Math.random() * 0.5, lost: 0, life: 0, spd: 5.4 + Math.random() * 1.2, dmg: 4 + Math.floor(Math.random() * 3), ko: 0 };
+  a.ent = { pos: a.pos, r: 0.36 * p.sc, h: 1.8 * p.sc, alive: true, hittable: true, webbable: true, prio: -1,
+    center() { return _mv2.set(a.pos.x, a.pos.y + 1.05 * p.sc, a.pos.z); },
+    onHit(dmg, dir, kind, knock) { angryDamage(a, dmg, dir, knock, kind === '回し蹴り'); },
+    onWeb(dir, net) { if (net) { angryDamage(a, 1, dir, 2, false); if (a.st !== 'ko') { a.st = 'stun'; a.t = 3; a.d.coc.visible = true; } } else angryDamage(a, 1, dir, 10, true); } };
+  p.st = 'angry'; p.angry = a; PEDS.angry.push(a);
+  if (!quiet) {
+    if (CLOCK - PEDS.warnT > 12) { PEDS.warnT = CLOCK; toast(pick(['通行人「痛っ！ 何すんだ！」', '通行人「おい、待てコラ！」', '通行人「ふざけんな！」']), '怒って追いかけてくる — 倒すか、スウィングで逃げ切れ', 'bad'); }
+    /* bystanders: a few join in, the rest run */
+    for (const B of PEDS.blocks) {
+      if (!B.extra && Math.hypot(B.cx - p.x, B.cz - p.z) > B.rad + 12) continue;
+      for (const q of B.peds) {
+        if (q === p || q.st !== 'walk' || Math.hypot(q.x - p.x, q.z - p.z) > 11) continue;
+        if (Math.random() < 0.28 && PEDS.angry.length < PED_MAX_ANGRY) { const qq = q; setTimeout(() => { if (qq.st === 'walk' && PEDS.group && PEDS.list.includes(qq)) { const b = pedProvoke(qq, dir, true); if (b) { b.st = 'chase'; b.t = 0; } } }, 300 + Math.random() * 700); }
+        else pedFlee(q);
+      }
+    }
+  }
+  return a;
+}
+function pedFlee(q) {
+  if (q.st !== 'walk' || q.ext) return;
+  pedPos(q, CLOCK);
+  const away = (q.x - P.pos.x) * _pa.fx + (q.z - P.pos.z) * _pa.fz;          // keep walking the loop, whichever way leads away
+  q.walkSpd = q.spd || 1.3; q.pose0 = q.pose;
+  q.st = 'flee'; q.fleeT = CLOCK + 5 + Math.random() * 4;
+  pedRebase(q, CLOCK, 3.6 + Math.random() * 1.2, away >= 0 ? 1 : -1);
+  q.amp = 1.0; q.pose = Math.random() < 0.5 ? 2 : 0; q.lean = 0.12;
+}
+function angryDamage(a, dmg, dir, knock, fly) {
+  if (a.st === 'ko' || a.st === 'calm') { if (a.st === 'calm') { a.st = 'chase'; a.lost = 0; } if (a.st === 'ko') return; }
+  a.hp -= dmg; a.d.coc.visible = false;
+  fxBurst('spark', _mv1.set(a.pos.x, a.pos.y + 1.3, a.pos.z), 6, 4, 0.2, 0xffe0b0, 0, 4);
+  if (a.hp <= 0) { a.st = 'ko'; a.t = 6; a.vel.set(dir.x * 7, 4.5, dir.z * 7); a.ent.alive = false; sfx('land', 0.6); return; }
+  a.vel.set(dir.x * knock, fly ? 6 : 0, dir.z * knock);
+  a.st = fly ? 'fly' : 'hit'; a.t = fly ? 0.8 : 0.35;
+}
+function angryUpdate(dt) {
+  const hc = hpos(), heroDown = P.state === 'down';
+  for (let i = PEDS.angry.length - 1; i >= 0; i--) {
+    const a = PEDS.angry[i], p = a.pos, dx = hc.x - p.x, dz = hc.z - p.z, dist = Math.hypot(dx, dz) || 0.01;
+    let mode = null, spd = 0;
+    a.t -= dt; a.cd -= dt; a.life += dt;
+    p.addScaledVector(a.vel, dt); a.vel.x *= Math.exp(-5 * dt); a.vel.z *= Math.exp(-5 * dt);
+    if (landY(p.x, p.z) === null) { p.x -= a.vel.x * dt * 2; p.z -= a.vel.z * dt * 2; a.vel.x = a.vel.z = 0; }
+    const gy = groundAt(p.x, p.z, p.y + 1.2);
+    if (a.vel.y !== 0 || p.y > gy + 0.05) { a.vel.y -= G * dt; if (p.y < gy) { p.y = gy; a.vel.y = 0; } } else p.y = gy;
+    if (inCols(_mv1.set(p.x, p.y + 1, p.z))) { p.x -= a.vel.x * dt * 2; p.z -= a.vel.z * dt * 2; a.vel.x = a.vel.z = 0; }
+    const face = (y, k) => { let d = y - a.yaw; d = Math.atan2(Math.sin(d), Math.cos(d)); a.yaw += d * Math.min(1, dt * (k || 9)); };
+    const step = (x, z, v) => { const L = Math.hypot(x, z) || 1, nx = p.x + (x / L) * v * dt, nz = p.z + (z / L) * v * dt; if (!inCols(_mv1.set(nx, p.y + 1, nz)) && landY(nx, nz) !== null) { p.x = nx; p.z = nz; } else if (!inCols(_mv1.set(nx, p.y + 1, p.z))) p.x = nx; else if (!inCols(_mv1.set(p.x, p.y + 1, nz))) p.z = nz; };
+    switch (a.st) {
+      case 'react': mode = 'hit'; face(Math.atan2(dx, dz)); if (a.t <= 0) { a.st = 'chase'; } break;
+      case 'hit': mode = 'hit'; if (a.t <= 0) { a.st = 'chase'; a.cd = Math.max(a.cd, 0.4); } break;
+      case 'fly': mode = 'hit'; a.d.rig.rotation.x = -0.9; if (a.t <= 0) { a.st = 'chase'; a.cd = Math.max(a.cd, 0.7); } break;
+      case 'stun': mode = 'stun'; if (a.t <= 0) { a.st = 'chase'; a.d.coc.visible = false; } break;
+      case 'wind': mode = 'wind'; face(Math.atan2(dx, dz)); if (a.t <= 0) { a.st = 'strike'; a.t = 0.26; sfx('swish', 0.6); if (dist < 1.9 && Math.abs(hc.y - (p.y + 1)) < 1.6 && P.iframe <= 0 && !heroDown) { hurt(a.dmg, '通行人のパンチ'); heroKnock(_mv1.set(dx, 0, dz).normalize(), 5, 3); } } break;
+      case 'strike': mode = 'punch'; if (a.t <= 0) { a.st = 'chase'; a.cd = 1.1 + Math.random() * 0.8; } break;
+      case 'ko': mode = 'ko'; if (a.t <= 0) { a.st = 'getup'; a.t = 0.9; } break;
+      case 'getup': mode = 'stun'; if (a.t <= 0) { a.st = 'calm'; a.hp = 3; a.ent.alive = true; } break;
+      case 'calm': {                                   // walk back to the sidewalk, then melt into the crowd again
+        const q = a.ped, r = q.r, s = pedNearestS(r, p.x, p.z); pedAt(r, s, _pa);
+        const ex = _pa.x - p.x, ez = _pa.z - p.z, ed = Math.hypot(ex, ez);
+        if (ed < 0.35 || a.life > 90) { pedReturn(a, s); PEDS.angry.splice(i, 1); continue; }
+        face(Math.atan2(ex, ez), 5); spd = 1.5; step(ex, ez, spd);
+        break;
+      }
+      default: {                                       // chase
+        face(Math.atan2(dx, dz));
+        const high = hc.y - p.y > 6, far = dist > 55;
+        a.lost = high || far || heroDown ? a.lost + dt : Math.max(0, a.lost - dt * 2);
+        if (a.lost > (heroDown ? 2 : 5) || a.life > 60) { a.st = 'calm'; if (!heroDown && dist < 120) hint('通行人はあきらめて帰っていった', 1.6); break; }
+        if (dist > 1.25) { spd = a.spd * (high ? 0.4 : 1); let mx = dx, mz = dz; for (const b of PEDS.angry) { if (b === a || b.st === 'ko') continue; const ex = p.x - b.pos.x, ez = p.z - b.pos.z, e2 = ex * ex + ez * ez; if (e2 < 1.4 && e2 > 1e-4) { mx += ex / e2 * dist * 0.4; mz += ez / e2 * dist * 0.4; } } step(mx, mz, spd); }
+        let attackers = 0; for (const b of PEDS.angry) if (b.st === 'wind' || b.st === 'strike') attackers++;
+        if (a.cd <= 0 && dist < 1.7 && !heroDown && attackers < 2 && Math.abs(hc.y - (p.y + 1)) < 1.6) { a.st = 'wind'; a.t = 0.42; }
+      }
+    }
+    const bb = a.ped.blk.b, onSlab = bb && p.x > bb.minX && p.x < bb.maxX && p.z > bb.minZ && p.z < bb.maxZ;
+    a.d.root.position.set(p.x, p.y + (onSlab ? 0.13 : 0), p.z); a.d.root.rotation.y = a.yaw;
+    dudeAnim(a.d, mode, spd, dt);
+  }
+}
+function pedReturn(a, s) {
+  const q = a.ped;
+  PEDS.group.remove(a.d.root);
+  a.d.root.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material && !o.material.userData.keep) o.material.dispose(); });
+  q.st = 'walk'; q.angry = null; q.run = null; q.ent = null;
+  q.dir = Math.random() < 0.5 ? 1 : -1; q.spd = q.spd > 0 ? q.spd : 1.2; q.t0 = CLOCK; q.s0 = q.dir > 0 ? s : -s; q.amp = 0.45; q.lean = 0; q.pose = 0;
+  q.ph0 = 0; q.tp = CLOCK;
+}
+function pedsCalmAll() {                              // hero respawned or a mission began: everyone goes home
+  for (const a of PEDS.angry) if (a.st !== 'ko') a.st = 'calm';
+}
 /* ---------- game flow, stage select, HUD, maps, sound, main loop ---------- */
 const STAGES = { nyc: NYC, hk: HK, tk: TK };
 const GAME = { started: false, paused: false, mapOpen: false, t0: 0, done: false };
@@ -7462,7 +8466,7 @@ function buildLegend() {
   const add = (col, label) => { const i = document.createElement('i'); i.style.background = col; L.appendChild(i); L.appendChild(document.createTextNode(label + '　')); };
   for (const [c, t] of STAGE.legend) add(c, t);
   add('var(--signal)', 'あなた');
-  L.appendChild(document.createElement('br')); L.appendChild(document.createTextNode('M でとじる'));
+  L.appendChild(document.createElement('br')); L.appendChild(document.createTextNode('M・Esc・クリックでゲームに戻る'));
 }
 const mm = $('minimap'), mctx = mm.getContext && mm.getContext('2d');
 function bulletAt(g, x, y, r, s, got) {
@@ -7516,11 +8520,15 @@ function drawBigMap() {
   }
   arrow(g, mx(P.pos.x) * k, mz(P.pos.z) * k, Math.atan2(Math.sin(P.yawFace), -Math.cos(P.yawFace)), 10 * dpr);
 }
-function toggleMap() {
-  if (!GAME.started || GAME.paused) return;
-  GAME.mapOpen = !GAME.mapOpen;
-  $('bigmap').hidden = !GAME.mapOpen;
-  if (GAME.mapOpen) drawBigMap();
+function toggleMap(force) {
+  if (!GAME.started) return;
+  const open = typeof force === 'boolean' ? force : !GAME.mapOpen;
+  if (open && (GAME.paused || MS.card)) return;
+  if (open === GAME.mapOpen) return;
+  GAME.mapOpen = open;
+  $('bigmap').hidden = !open;
+  for (const k in KEY) KEY[k] = false; mouseSwing = false;
+  if (open) drawBigMap();
 }
 
 /* ---------- sound (synthesised, starts on the first click) ---------- */
@@ -7585,7 +8593,7 @@ function loadStage(id) {
   const S = STAGES[id] || NYC;
   msAbort();
   resetWorld();
-  STAGE = S; R = mulberry(S.seed);
+  STAGE = S; R = mulberry(S.seed); PED_EXTRA = [];
   applyLook(S.look); heroLook(!!S.look.night);
   S.build();
   buildInstanced(); buildTanks(); buildTrees();
@@ -7593,6 +8601,7 @@ function loadStage(id) {
   const gm = ground.mesh(MAT_BLD_VC); gm.receiveShadow = true; WORLD.add(gm);
   buildDetails(); buildGrass();
   buildVehicleMeshes(); updateTraffic(0, true); updateTrains(0, true);
+  buildPeds();
   SPOTS = S.spots; VISITED = VISITED_BY[S.id];
   drawStaticMap(); chooseSpawn(); placeAtSpawn(); renderSpots(); buildLegend();
   lastDistrict = ''; GAME.done = VISITED.size === SPOTS.length;
@@ -7629,6 +8638,7 @@ function startGame() {
 }
 function pause() {
   if (!GAME.started || GAME.paused) return;
+  if (GAME.mapOpen) { GAME.mapOpen = false; $('bigmap').hidden = true; }
   GAME.paused = true;
   $('pause-count').textContent = `${VISITED.size}/${SPOTS.length}`;
   $('pause-time').textContent = fmtTime(CLOCK - GAME.t0);
@@ -7652,9 +8662,10 @@ function die(reason) {
   $('down-reason').textContent = `${reason}で力尽きた。クリック または R キーで再開。`;
   setTimeout(() => { if (P.state === 'down' && GAME.started) $('down').hidden = false; }, 900);
 }
-function respawn() { placeAtSpawn(); $('down').hidden = true; toast('スタート地点から再開', null, 'ok'); }
+function respawn() { pedsCalmAll(); placeAtSpawn(); $('down').hidden = true; toast('スタート地点から再開', null, 'ok'); }
 function toRoof() {
   if (!GAME.started || GAME.paused) return;
+  if (MS.cur && MS.cur.combat) { hint('戦闘中は R（屋上へ移動）は使えない — スウィングで移動しよう', 1.6); sfx('fail', 0.25); return; }
   let best = null, bd = 1e9;
   for (const c of COLS) {
     if (c.maxY < 12 || c.maxY > 180 || c.maxX - c.minX < 10 || c.maxZ - c.minZ < 10) continue;
@@ -7684,13 +8695,14 @@ window.addEventListener('keydown', (e) => {
     case 'KeyR': toRoof(); break;
     case 'KeyV': toggleSound(); break;
     case 'KeyP': if (GAME.paused) resume(); else pause(); break;
-    case 'Escape': if (GAME.mapOpen) toggleMap(); else if (NOLOCK || IS_TOUCH) { if (GAME.paused) resume(); else pause(); } break;
+    case 'Escape': if (GAME.mapOpen) toggleMap(false); else if (NOLOCK || IS_TOUCH) { if (GAME.paused) resume(); else pause(); } break;
   }
 });
 window.addEventListener('keyup', (e) => { KEY[e.code] = false; if (e.code === 'KeyF') msWebUp(); });
 window.addEventListener('blur', () => { for (const k in KEY) KEY[k] = false; mouseSwing = false; });
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 canvas.addEventListener('mousedown', (e) => {
+  if (GAME.mapOpen) { toggleMap(false); if (!pointerLocked) lockPointer(); return; }   // a click anywhere closes the map
   if (!GAME.started || GAME.paused || IS_TOUCH) return;
   if (!pointerLocked) lockPointer();
   if (P.state === 'down') { if (P.downT > 0.9) respawn(); return; }
@@ -7708,7 +8720,8 @@ window.addEventListener('mousemove', (e) => {
 });
 document.addEventListener('pointerlockchange', () => {
   pointerLocked = document.pointerLockElement === canvas;
-  if (!pointerLocked && GAME.started && !GAME.paused && !NOLOCK) pause();
+  if (!pointerLocked && GAME.started && GAME.mapOpen) { toggleMap(false); hint('クリックでゲームに戻る', 2.2); return; }   // Esc on the map closes it
+  if (!pointerLocked && GAME.started && !GAME.paused && !MS.card && !NOLOCK) pause();
 });
 document.addEventListener('pointerlockerror', () => { NOLOCK = true; });
 $('start-btn').addEventListener('click', startGame);
@@ -7719,7 +8732,7 @@ $('home-btn').addEventListener('click', () => { placeAtSpawn(); resume(); });
 $('stage-btn').addEventListener('click', backToTitle);
 $('respawn-btn').addEventListener('click', respawn);
 $('down').addEventListener('click', (e) => { if (e.target === $('down')) respawn(); });
-$('bigmap').addEventListener('click', toggleMap);
+$('bigmap').addEventListener('click', () => { toggleMap(false); if (!pointerLocked) lockPointer(); });
 for (const id of Object.keys(STAGES)) $('stage-' + id).addEventListener('click', () => selectStage(id));
 
 /* touch controls */
@@ -7807,6 +8820,7 @@ function frame(now) {
     BU.uTime.value = CLOCK;
     updateTraffic(dt); updateTrains(dt);
     for (const f of TICKS) f(dt, CLOCK);
+    pedsUpdate(dt);
     if (GAME.started && !MS.lockHero) playerUpdate(dt);
     if (GAME.started) msUpdate(dt);
     fxUpdate(dt);
