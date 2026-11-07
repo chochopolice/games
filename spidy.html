@@ -1,5 +1,5 @@
 <!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
-<title>Skyline Swing NYC</title>
+<title>SWINGS</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -91,11 +91,14 @@ kbd{font:800 11px var(--f-body);color:var(--paper);background:var(--band-2);padd
 .overlay{position:fixed;inset:0;display:grid;overflow:auto;
   padding-block:calc(env(safe-area-inset-top,0px) + 24px) calc(env(safe-area-inset-bottom,0px) + 24px);
   padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
-#title{background:linear-gradient(90deg,rgba(12,14,17,.9) 0%,rgba(12,14,17,.66) 55%,rgba(12,14,17,.25) 100%);align-content:end}
+#title{background:linear-gradient(90deg,rgba(12,14,17,.9) 0%,rgba(12,14,17,.66) 55%,rgba(12,14,17,.25) 100%);display:flex;flex-direction:column}
+/* bottom-aligned when it fits; when the window is short the top stays reachable and the panel scrolls */
+#title > .title-grid{margin-top:auto;flex-shrink:0}
 .title-grid{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:clamp(20px,4vw,56px);align-items:end;max-width:1180px;width:100%}
 .route{display:flex;gap:6px;margin-bottom:18px;flex-wrap:wrap}
 .route .bullet{width:30px;height:30px;font-size:14px}
-h1{margin:0;font:400 clamp(40px,6.4vw,96px)/.86 var(--f-display);letter-spacing:-.02em;text-wrap:balance}
+h1{margin:0;font:400 clamp(40px,min(5.6vw,11vh),82px)/.9 var(--f-display);letter-spacing:-.02em;text-wrap:balance}
+
 h1 em{font-style:normal;color:var(--signal);white-space:nowrap}
 .tag{font:700 clamp(15px,1.6vw,19px)/1.6 var(--f-body);margin:18px 0 22px;max-width:34em;color:var(--paper)}
 .tag span{color:var(--steel);display:block;font-weight:500;font-size:.85em}
@@ -229,6 +232,17 @@ body.scope.scope-hit #reticle{background:linear-gradient(var(--go),var(--go)) ce
 #tb-act{width:62px;height:62px;right:calc(max(16px,env(safe-area-inset-right,0px)) + 190px);bottom:calc(env(safe-area-inset-bottom,0px) + 40px);font-size:11px}
 #tb-web{width:62px;height:62px;right:calc(max(16px,env(safe-area-inset-right,0px)) + 178px);bottom:calc(env(safe-area-inset-bottom,0px) + 128px)}
 @media (max-width:760px){ #ms-hud{top:calc(env(safe-area-inset-top,0px) + 118px);width:min(240px,58vw);padding:10px 12px 9px} .ms-n{font-size:15px} }
+/* short desktop windows: tighten the title panel so the start button stays in view */
+@media (max-height:820px) and (min-width:900px){.tag{margin:12px 0 14px}.tag span{display:none}.title-ms{margin-bottom:12px}
+  .tms-row{grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.tms{padding:8px 10px 7px}.stage-card{padding:9px 11px 7px}.sc-route .bullet{width:15px;height:15px;font-size:8px}.note{margin-top:8px}}
+/* cut-scenes: letterbox bars, subtitles, HUD out of the way */
+#cine{position:fixed;inset:0;pointer-events:none;z-index:6}
+#cine::before,#cine::after{content:"";position:absolute;left:0;right:0;height:11vh;background:#050607;animation:cineIn .45s ease-out}
+#cine::before{top:0}#cine::after{bottom:0}
+@keyframes cineIn{from{height:0}}
+#cine-sub{position:absolute;z-index:1;left:50%;transform:translateX(-50%);bottom:calc(11vh + 18px);width:min(880px,92vw);text-align:center;font:700 clamp(15px,2.1vw,22px)/1.45 var(--f-body);color:#fff;text-shadow:0 2px 10px rgba(0,0,0,.85),0 0 2px #000}
+#cine-skip{position:absolute;z-index:1;top:calc(5.5vh - 8px);right:24px;font:700 12px var(--f-body);letter-spacing:.08em;color:rgba(255,255,255,.62)}
+body.cine #hud,body.cine #ms-hud,body.cine #ms-pin,body.cine #ms-prompt,body.cine #touch,body.cine #fx-speed{visibility:hidden}
 </style>
 
 <canvas id="gl" tabindex="-1"></canvas>
@@ -289,6 +303,7 @@ body.scope.scope-hit #reticle{background:linear-gradient(var(--go),var(--go)) ce
 </div>
 <div id="ms-pin" hidden><i></i><span id="ms-pin-d"></span></div>
 <div id="ms-prompt" hidden></div>
+<div id="cine" hidden><div id="cine-sub"></div><div id="cine-skip">E：スキップ</div></div>
 <section id="ms-card" class="overlay" hidden>
   <div class="center-card">
     <p class="ms-kicker" id="ms-kicker">MISSION 1</p>
@@ -317,7 +332,7 @@ body.scope.scope-hit #reticle{background:linear-gradient(var(--go),var(--go)) ce
   <div class="title-grid">
     <div>
       <div class="route" id="title-route"></div>
-      <h1>SKYLINE<br>SWING <em id="title-stage">NYC</em></h1>
+      <h1>SWINGS <em id="title-stage">NYC</em></h1>
       <p class="tag"><b id="title-tag">ウェブ1本で摩天楼のあいだを飛び抜けろ。</b>
         <span>車や電車にはねられる・高い所から落ちるとダメージ。着地の直前に受け身を取れば軽く済む。</span></p>
       <p class="stage-label">ステージ</p>
@@ -1552,17 +1567,17 @@ function writeMatrix(mesh, i, m, flip) {
 let TRAFFIC_BLOCK = null;                         // a mission can close the roads around a point
 let TRAFFIC_ROUTE = null;                         // …or a whole corridor: { pts: [[x, z]…], r }
 function routeNear(x, z) {
-  const R = TRAFFIC_ROUTE, P0 = R.pts, r2 = R.r * R.r;
-  for (let i = 0; i < P0.length - 1; i++) {
+  const R = TRAFFIC_ROUTE, r2 = R.r * R.r;
+  for (const P0 of R.lines) for (let i = 0; i < P0.length - 1; i++) {
     const ax = P0[i][0], az = P0[i][1], dx = P0[i + 1][0] - ax, dz = P0[i + 1][1] - az, L2 = dx * dx + dz * dz || 1;
     const t = clamp(((x - ax) * dx + (z - az) * dz) / L2, 0, 1), qx = ax + dx * t - x, qz = az + dz * t - z;
     if (qx * qx + qz * qz < r2) return true;
   }
   return false;
 }
-/* close a corridor: cars already inside are parked out of sight, the rest queue at its edge */
+/* close a corridor (one polyline [[x, z]…] or several): cars already inside are parked out of sight, the rest queue at its edge */
 function trafficCloseRoute(pts, r) {
-  TRAFFIC_ROUTE = { pts, r };
+  TRAFFIC_ROUTE = { lines: Array.isArray(pts[0][0]) ? pts : [pts], r };
   for (const lane of LANES) for (const a of lane.cars) if (!a.held && routeNear(a.x, a.z)) { a.held = 'route'; a.v = 0; a.y = -80; }
 }
 function trafficOpenRoute() {
@@ -3339,7 +3354,7 @@ function buildHK() {
 }
 
 const HK = {
-  id: 'hk', seed: 19970701, title: '香港', label: 'HONG KONG', labelJp: '香港・夜景',
+  id: 'hk', seed: 19970701, title: 'HKG', label: 'HONG KONG', labelJp: '香港・夜景',
   tagline: 'ネオンの九龍からヴィクトリア・ハーバーを越え、香港島の摩天楼とピークへ。夜の香港で10か所の名所を巡る。',
   look: {
     sun: [-0.2, 0.45, 0.85], fog: [0.20, 0.13, 0.22], fogNear: 240, fogFar: 1900,
@@ -4590,7 +4605,7 @@ const TK_ZONE_NAME = {
   shiba: ['SHIBA', '芝・浜松町'], chiyoda: ['CHIYODA', '千代田・九段']
 };
 const TK = {
-  id: 'tk', seed: 20261104, title: '東京', label: 'TOKYO', labelJp: '東京・秋晴れの午後',
+  id: 'tk', seed: 20261104, title: 'TYO', label: 'TOKYO', labelJp: '東京・秋晴れの午後',
   tagline: '東京タワーからスカイツリーへ、山手線と首都高の上を飛び越えろ。秋晴れの東京で10か所の名所を巡る。',
   look: {
     sun: [-0.35, 0.62, 0.70], fog: [0.74, 0.80, 0.87], fogNear: 300, fogFar: 2200,
@@ -5747,7 +5762,7 @@ function buildDXB() {
 }
 
 const DXB = {
-  id: 'dxb', seed: 20101204, title: 'ドバイ', label: 'DUBAI', labelJp: 'ドバイ・砂漠の夕焼け',
+  id: 'dxb', seed: 20101204, title: 'DUBAI', label: 'DUBAI', labelJp: 'ドバイ・砂漠の夕焼け',
   tagline: '世界一高いブルジュ・ハリファから、ヤシの島パーム・ジュメイラ、そして砂漠へ。夕焼けのドバイで10か所の名所を巡る。',
   look: {
     sun: [-0.78, 0.2, 0.46], fog: [0.82, 0.62, 0.48], fogNear: 320, fogFar: 2700,
@@ -7502,7 +7517,7 @@ function land(src) {
   P.ride = src && src.T ? src : null;
 }
 function hurt(d, reason) {
-  if (P.state === 'down' || d <= 0) return;
+  if (P.state === 'down' || d <= 0 || MS.intro) return;
   if (MS.cur && MS.cur.onHurt && MS.cur.onHurt(d, reason) === false) return;
   P.hp -= d; P.lastHit = CLOCK; P.iframe = 1.1;
   flashHit(); sfx('hit'); CAM.shake = Math.min(1, 0.3 + d / 60);
@@ -7909,7 +7924,7 @@ function updateHero(dt) {
    Missions unlock per stage once every sightseeing spot is visited (or with #…-missions in the URL).
    Each mission: { title, goal, story, keys, limit, start, update, end, obj, bars, target, prompt, interact, onHurt, onZipDown, onZipUp } */
 const MS = {
-  cur: null, idx: -1, t: 0, group: null, ents: [], shots: [], webs: [], lockHero: false, camHook: null, pose: null, heroPose: null,
+  cur: null, idx: -1, t: 0, tOff: 0, intro: null, group: null, ents: [], shots: [], webs: [], lockHero: false, camHook: null, pose: null, heroPose: null,
   glideMax: 0, card: null, hudT: 0, photos: [], barsN: -1,
   unlocked: { nyc: false, hk: false, tk: false, dxb: false }, cleared: { nyc: [0, 0, 0], hk: [0, 0, 0], tk: [0, 0, 0], dxb: [] }
 };
@@ -8212,6 +8227,7 @@ function nearestHittable(R) {
 }
 function msAct() {
   if (!GAME.started || GAME.paused || P.state === 'down') return;
+  if (MS.intro) { msIntroSkip(); return; }
   if (MS.cur && MS.cur.interact && MS.cur.interact()) return;
   if (MS.lockHero) return;
   if (P.state === 'swing' || P.state === 'zip' || P.state === 'water') return;
@@ -8368,11 +8384,14 @@ function msShowCard(o) {
   $('ms-card').hidden = false;
 }
 function msHideCard() { $('ms-card').hidden = true; MS.card = null; }
+/* letterboxed cut-scene mode with a subtitle line (HUD hidden) */
+function msCine(on) { document.body.classList.toggle('cine', !!on); $('cine').hidden = !on; if (!on) $('cine-sub').textContent = ''; }
+function msCineSay(t) { $('cine-sub').textContent = t; }
 function msCardKey(e) {
   if (!MS.card) return false;
   const B = MS.card.btns;
   if (e.code === 'Enter' || e.code === 'Space') (B.find((b) => b.primary) || B[0]).fn();
-  else if (e.code === 'Escape') B[B.length - 1].fn();
+  else if (e.code === 'Escape') (B.find((b) => b.back) || B[B.length - 1]).fn();
   return true;
 }
 function msPauseList() {
@@ -8384,7 +8403,7 @@ function msPauseList() {
   L.forEach((m, i) => {
     const b = document.createElement('button'); b.className = 'ghost'; b.type = 'button';
     b.textContent = `${MS.cleared[id][i] ? '✓' : '▶'}　ミッション${i + 1}：${m.title}`;
-    b.addEventListener('click', () => { $('pause').hidden = true; msBrief(i); }); box.appendChild(b);
+    b.addEventListener('click', () => { $('pause').hidden = true; msBrief(i, 'list'); }); box.appendChild(b);
   });
   if (MS.cur) { const b = document.createElement('button'); b.className = 'ghost'; b.type = 'button'; b.textContent = '✕　実行中のミッションを中止'; b.addEventListener('click', () => { msEnd(); resume(); }); box.appendChild(b); }
 }
@@ -8398,10 +8417,14 @@ function msOnAllSpots() {
     setTimeout(() => { if (GAME.started && !MS.cur && !GAME.paused && STAGE.id === id) msBrief(0); }, 2400);
   }, 3600);
 }
-function msBrief(i) {
+/* from: 'title' (picked on the title screen) · 'list' (pause menu or the next-mission button) · undefined (offered automatically) */
+function msBrief(i, from) {
   const m = MSN[STAGE.id][i];
-  msShowCard({ kicker: `${STAGE.label} · MISSION ${i + 1}`, name: m.title, text: m.story, keys: m.combat ? [...m.keys, 'R（近くの屋上へ移動）は戦闘中は使えない'] : m.keys,
-    btns: [{ label: '▶ ミッション開始', primary: true, fn: () => { msHideCard(); msStart(i); } }, { label: 'あとで', fn: () => { msHideCard(); resume(); } }] });
+  const btns = [{ label: '▶ ミッション開始', primary: true, fn: () => { msHideCard(); msStart(i); } }];
+  if (from === 'title') btns.push({ label: '← ステージ選択に戻る', back: true, fn: () => { msHideCard(); backToTitle(); } });
+  if (from === 'list') btns.push({ label: '← ミッション一覧に戻る', back: true, fn: () => { msHideCard(); GAME.paused = false; pause(); } });
+  btns.push({ label: 'あとで（自由に散策）', fn: () => { msHideCard(); resume(); } });
+  msShowCard({ kicker: `${STAGE.label} · MISSION ${i + 1}`, name: m.title, text: m.story, keys: m.combat ? [...m.keys, 'R（近くの屋上へ移動）は戦闘中は使えない'] : m.keys, btns });
 }
 function msStart(i) {
   msEnd();
@@ -8412,10 +8435,52 @@ function msStart(i) {
   $('down').hidden = true;
   P.hp = 100; P.iframe = 0.5; P.vel.set(0, 0, 0); P.anchor = null; P.glide = false; P.ride = null; P.wall = null; P.zipC = null;
   if (P.state === 'down' || P.state === 'zip' || P.state === 'swing') P.state = 'air';
+  MS.tOff = 0; MS.intro = null;
   m.start();
   $('ms-hud').hidden = false; $('ms-k').textContent = `MISSION ${i + 1}`; $('ms-n').textContent = m.title;
   GAME.paused = false; $('pause').hidden = true; lockPointer();
-  toast(`MISSION ${i + 1}　${m.title}`, m.goal, 'big');
+  if (!msIntroStart(m)) toast(`MISSION ${i + 1}　${m.title}`, m.goal, 'big');
+}
+/* ---------- opening scenes ----------
+   m.scene() → { live, shots: [{ d, cam, look, say, go() }] }
+   cam / look: [x, y, z] · V3 · (u) => V3 · { a, b } (eased move from a to b over the shot)
+   live: the mission keeps running underneath (its own entrance plays out; the clock and the hero don't count) */
+function msIntroStart(m) {
+  const I = typeof m.scene === 'function' ? m.scene() : null; if (!I || !I.shots || !I.shots.length) return false;
+  if (!I.live) m.update(1 / 60);                           // place everything once, then hold still
+  const tx = -Math.sin(CAM.yaw), tz = -Math.cos(CAM.yaw);
+  MS.intro = Object.assign(I, { i: -1, t: 0, T: 0, cam: new V3(), look: new V3(), yaw0: CAM.yaw, pitch0: CAM.pitch, ff: false });
+  P.yawFace = Math.atan2(tx, tz); P.faceT = 0;
+  MS.lockHero = true; P.iframe = 1e6; msCine(true);
+  MS.camHook = () => { const C = MS.intro; if (!C) return; camera.position.copy(C.cam); camera.lookAt(C.look); camDir.subVectors(C.look, C.cam).normalize(); };
+  msIntroShot(0);
+  return true;
+}
+const _ia = new V3(), _ib = new V3();
+function msIntroVal(v, u, out) {
+  if (typeof v === 'function') return out.copy(v(u));
+  if (Array.isArray(v)) return out.set(v[0], v[1], v[2]);
+  if (v.isVector3) return out.copy(v);
+  const e = u * u * (3 - 2 * u); msIntroVal(v.a, u, _ia); msIntroVal(v.b, u, _ib); return out.copy(_ia).lerp(_ib, e);
+}
+function msIntroShot(i) { const C = MS.intro; C.i = i; C.t = 0; const s = C.shots[i]; if (s.go) s.go(); if (s.say && !C.ff) msCineSay(s.say); msIntroCam(); }
+function msIntroCam() { const C = MS.intro, s = C.shots[C.i], u = clamp(C.t / s.d, 0, 1); msIntroVal(s.cam, u, C.cam); msIntroVal(s.look, u, C.look); }
+function msIntroStep(dt) {
+  const C = MS.intro; C.t += dt; C.T += dt;
+  if (C.t >= C.shots[C.i].d) { if (C.i + 1 < C.shots.length) msIntroShot(C.i + 1); else { msIntroEnd(); return; } }
+  msIntroCam();
+}
+function msIntroEnd() {
+  const C = MS.intro; if (!C) return; MS.intro = null;
+  MS.lockHero = false; MS.camHook = null; msCine(false); P.iframe = 0.6;
+  CAM.yaw = C.yaw0; CAM.pitch = C.pitch0;
+  if (C.after) C.after();
+  const m = MS.cur; if (m) toast(`MISSION ${MS.idx + 1}　${m.title}`, m.goal, 'big');
+}
+/* E skips: the rest of the scene runs at once, so a live entrance ends exactly where it would have */
+function msIntroSkip() {
+  const C = MS.intro; if (!C) return; C.ff = true;
+  for (let n = 0; MS.intro === C && n < 3000; n++) { const dt = 1 / 30; msIntroStep(dt); if (C.live && MS.cur) { MS.t += dt; MS.tOff += dt; MS.cur.update(dt); shotsUpdate(dt); } }
 }
 function msEnd() {
   const m = MS.cur;
@@ -8423,7 +8488,7 @@ function msEnd() {
   for (const e of MS.ents) if (e.dispose) e.dispose();
   MS.ents.length = 0; MS.shots.length = 0;
   if (MS.group) { scene.remove(MS.group); MS.group = null; }
-  MS.cur = null; MS.lockHero = false; MS.camHook = null; MS.glideMax = 0; MS.webRange = 0; MS.webSpeed = 0; MS.heroPose = null; MS.aimSens = 1; CB.lock = null;
+  msCine(false); MS.intro = null; MS.cur = null; MS.lockHero = false; MS.camHook = null; MS.glideMax = 0; MS.webRange = 0; MS.webSpeed = 0; MS.heroPose = null; MS.aimSens = 1; CB.lock = null;
   document.body.classList.remove('scope', 'zoom', 'scope-hit');
   heroProp(null);
   $('ms-hud').hidden = true; $('ms-pin').hidden = true; $('ms-prompt').hidden = true;
@@ -8437,7 +8502,7 @@ function msWin(text) {
   msEnd();
   const next = MSN[id][i + 1], all = MS.cleared[id].every(Boolean);
   msShowCard({ kicker: 'MISSION CLEAR', kind: 'win', name: m.title, text: (text || m.win || '') + (all && !next ? `　${STAGE.labelJp.split('・')[0]}の全ミッション制覇！` : ''), photos,
-    btns: [next ? { label: `▶ 次へ：${next.title}`, primary: true, fn: () => { msHideCard(); msBrief(i + 1); } } : null, { label: '街を自由に探索', primary: !next, fn: () => { msHideCard(); resume(); } }].filter(Boolean) });
+    btns: [next ? { label: `▶ 次へ：${next.title}`, primary: true, fn: () => { msHideCard(); msBrief(i + 1, 'list'); } } : null, { label: '街を自由に探索', primary: !next, fn: () => { msHideCard(); resume(); } }].filter(Boolean) });
 }
 function msFail(reason) {
   const m = MS.cur; if (!m) return;
@@ -8449,20 +8514,27 @@ function msFail(reason) {
 function msUpdate(dt) {
   combatUpdate(dt);
   const m = MS.cur; if (!m) return;
+  const C = MS.intro;
+  if (C) {
+    msIntroStep(dt);
+    if (C.live) { MS.t += dt; MS.tOff += dt; m.update(dt); if (MS.cur !== m) return; shotsUpdate(dt); }
+    return;
+  }
   MS.t += dt;
   if (MS.lockHero) { P.iframe -= dt; if (CLOCK - P.lastHit > 6) P.hp = Math.min(100, P.hp + 5 * dt); }
   m.update(dt);
   if (MS.cur !== m) return;
   shotsUpdate(dt);
-  if (m.limit && MS.t > m.limit) { msFail(m.timeout || '時間切れ'); return; }
+  if (m.limit && MS.t - MS.tOff > m.limit) { msFail(m.timeout || '時間切れ'); return; }
   MS.hudT -= dt; if (MS.hudT <= 0) { MS.hudT = 0.1; msHud(m); }
   msPin(m);
 }
 function msHud(m) {
   $('ms-o').textContent = m.obj ? m.obj() : m.goal;
   const tm = $('ms-time');
-  if (m.limit) { const r = Math.max(0, m.limit - MS.t); tm.textContent = fmtTime(r); tm.classList.toggle('low', r < 20); }
-  else { tm.textContent = fmtTime(MS.t); tm.classList.remove('low'); }
+  const el = MS.t - MS.tOff;
+  if (m.limit) { const r = Math.max(0, m.limit - el); tm.textContent = fmtTime(r); tm.classList.toggle('low', r < 20); }
+  else { tm.textContent = fmtTime(el); tm.classList.remove('low'); }
   const bars = m.bars ? m.bars() : [], box = $('ms-bars');
   if (bars.length !== MS.barsN) {
     box.textContent = ''; MS.barsN = bars.length;
@@ -8594,7 +8666,7 @@ function msTitleList() {
     const k = document.createElement('span'); k.className = 'tms-k'; k.textContent = `MISSION ${i + 1}${MS.cleared[STAGE.id][i] ? '　✓ クリア' : ''}`;
     const n = document.createElement('span'); n.className = 'tms-n'; n.textContent = m.title;
     b.appendChild(k); b.appendChild(n);
-    b.addEventListener('click', () => { if (GAME.started) return; startGame(true); msBrief(i); });
+    b.addEventListener('click', () => { if (GAME.started) return; startGame(true); msBrief(i, 'title'); });
     row.appendChild(b);
   });
 }
@@ -9787,7 +9859,9 @@ MSN.nyc.push({
     this.van = vkVan().mesh(MAT_VEH); this.van.castShadow = true; MS.group.add(this.van);
     this.hp = 3; this.v = 0; this.cd = 3.5; this.lost = 0; this.dead = 0; this.hitFlash = 0;
     this.pos = new V3(); this.place();
-    const H = laneAt(this.lane, this.s - 30, 0);
+    /* start on the pavement behind the van, not in a traffic lane */
+    let H = laneAt(this.lane, this.s - 30, 0);
+    for (const lat of [7, -7, 9, -9, 11, -11, 13, -13]) { const q = laneAt(this.lane, this.s - 30, lat), n = laneNear(q.x, q.z, 0); if ((!n || n.d > 3.5) && !inCols(new V3(q.x, q.y + 1, q.z))) { H = q; break; } }
     P.pos.set(H.x, groundAt(H.x, H.z, 400) + 0.05, H.z); P.state = 'ground'; CAM.yaw = Math.atan2(-H.fx, -H.fz); CAM.pitch = -0.05;
     toast('銀行強盗のバンが逃走中！', '追いかけてグレネードを打ち返せ', 'bad');
   },
@@ -11149,7 +11223,7 @@ MSN.hk.push({
     TRAFFIC_BLOCK = { x: C.x, z: C.z, r: 70 };
     const d = this.d = mkWolf(); MS.group.add(d.root);
     this.ch = mkKusari(MS.group);
-    this.pos = new V3(C.x, C.y, C.z - 7); this.vel = new V3(); this.yaw = 0;
+    this.pos = new V3(C.x, C.y, C.z - 13); this.pos.y = groundAt(this.pos.x, this.pos.z, C.y + 3); this.vel = new V3(); this.yaw = 0;   // 22 m from the hero
     P.pos.set(C.x, C.y + 0.05, C.z + 9); P.state = 'ground'; P.vel.set(0, 0, 0); CAM.yaw = 0; CAM.pitch = 0.05;
     this.hp = WOLF_HP; this.st = 'intro'; this.t = 2.6; this.cd = 1.2; this.biteCD = 4; this.netImm = 0; this.poise = 0; this.rage = false; this.wantHowl = false;
     this.bind = 0; this.downT = 0; this.winT = 0; this.orbit = 1; this.orbitT = 3; this.highT = 0; this.flash = 0; this.hitT = 0; this.W = new V3(); this.atk = null;
@@ -12508,7 +12582,7 @@ MSN.dxb.push({
     TRAFFIC_BLOCK = { x: C.x, z: C.z, r: 230 };
     const r = this.r = mkRobo(); MS.group.add(r.root);
     this.pos = new V3(338, 0, 652); this.pos.y = groundAt(this.pos.x, this.pos.z, 4); this.yaw = Math.atan2(300 - 338, 600 - 652);
-    this.hp = ROBO_HP; this.st = 'intro'; this.t = 3.2; this.cd = 1.5; this.mCD = 5; this.gCD = 2.5; this.grabCD = 4; this.slashCD = 1; this.heat = 0; this.rage = false;
+    this.hp = ROBO_HP; this.st = 'intro'; this.t = 4.4; this.calmT = 5; this.cd = 1.5; this.mCD = 5; this.gCD = 2.5; this.grabCD = 4; this.slashCD = 1; this.heat = 0; this.rage = false;
     this.ph = 0; this.tw = 0; this.flash = 0; this.mis = []; this.fires = []; this.struggle = 0; this.held = false; this.deadT = 0; this.stepSide = 1; this.aim = new V3(); this.c = new V3();
     const self = this;
     this.ent = msEnt({ pos: this.pos, r: 2.9, h: 11.5, hittable: true, webbable: true, prio: 1, center: () => self.c,
@@ -12580,6 +12654,8 @@ MSN.dxb.push({
     const p = this.pos, r = this.r, hc = hpos();
     const dx = hc.x - p.x, dz = hc.z - p.z, hd = Math.hypot(dx, dz) || 0.01, dy = hc.y - p.y, toHero = Math.atan2(dx, dz);
     const k = this.rage ? 1.35 : 1;
+    /* the first 5 s after the opening scene: it only walks toward the hero */
+    if (MS.intro) this.calmT = 5; else if (this.calmT > 0) { this.calmT -= dt; if (this.calmT <= 0) this.cd = Math.max(this.cd, 0.6); }   // a beat before the first attack
     this.t -= dt; this.cd -= dt; this.mCD -= dt * k; this.gCD -= dt * k; this.grabCD -= dt; this.slashCD -= dt * k; this.flash -= dt;
     let rel = toHero - this.yaw; rel = Math.atan2(Math.sin(rel), Math.cos(rel));
     const face = (kk) => { this.yaw += rel * Math.min(1, dt * (kk || 1.6)); };
@@ -12615,6 +12691,7 @@ MSN.dxb.push({
       }
       case 'walk': {
         face(1.4);
+        if (this.calmT > 0) { if (hd > 10) spd = walkTo(dx, dz, 4.2); pose = spd > 0 ? 'walk' : 'idle'; break; }
         if (hd > 22) spd = walkTo(dx, dz, 4.2 * k);
         else if (hd < 8 && this.grabCD > 0) spd = walkTo(-dx, -dz, 2.6);
         else spd = walkTo(dz * this.stepSide, -dx * this.stepSide, 2.2);
@@ -12817,12 +12894,531 @@ MSN.dxb.push({
     if (this.held) return `E 連打で振りほどけ！（${this.struggle}/6）`;
     if (this.st === 'overheat') return 'オーバーヒート中！ 今のうちに攻撃しろ（ダメージ2倍）';
     if (this.mis.some((m) => m.mode !== 'back')) return '追尾ミサイル接近！ ウェブ（F）で打ち返せ';
+    if (this.calmT > 0) return '暴走ロボがこちらへ向かってくる — 迎え撃つ準備をしろ';
     return this.rage ? 'リミッター解除！ 攻撃の前ぶれをよく見ろ' : '暴走ロボを破壊しろ — ミサイルを打ち返すのが効果的';
   },
   bars() { return [['ロボ', this.hp / ROBO_HP, 'var(--alarm)']]; },
   prompt() { return this.held ? 'E 連打：振りほどく' : null; },
   target() { return this.c.distanceTo(P.pos) > 26 ? _mv2.copy(this.c).setY(this.c.y + 6) : null; }
 });
+
+/* ================= shared pieces for missions 3 and 4 ================= */
+function mkSaud() {
+  const S = mkDude({ top: 0xf8f7f2, bottom: 0xf8f7f2, skin: 0xc99a70, hair: 0x1a1410, shoe: 0x6a4a2a });
+  S.add(new THREE.SphereGeometry(0.15, 14, 8, 0, Math.PI * 2, 0, Math.PI * 0.62), new THREE.MeshLambertMaterial({ color: 0xf4f2ee }), S.head, 0, 0.03, -0.01).scale.set(1.02, 1.05, 1.08);
+  S.add(new THREE.TorusGeometry(0.135, 0.022, 6, 16).rotateX(Math.PI / 2), new THREE.MeshLambertMaterial({ color: 0x161616 }), S.head, 0, 0.11, -0.005);
+  S.add(new THREE.BoxGeometry(0.3, 0.42, 0.04), new THREE.MeshLambertMaterial({ color: 0xf4f2ee }), S.head, 0, -0.14, -0.12);
+  return S;
+}
+/* low, wide supercar on the shared car builder */
+function vkSuper(o) {
+  const p = vkCar({ L: 4.6, W: 2.04, zf: 1.42, zr: -1.4, cowl: 0.38, deck: -1.7, top: 1.08, roofF: -0.22, roofR: -1.05, zB: -0.62, belt: 0.78, hood: 0.66, body: o.body, trim: o.trim, gw: 0.4 });
+  for (const s of [-1, 1]) p.box(s * 1.01, 0.42, -0.6, 0.05, 0.24, 0.9, 0x111214, 13);           // side intakes
+  if (o.wing) { p.box(0, 1.1, -2.08, 1.8, 0.05, 0.38, o.body, 12); for (const s of [-1, 1]) p.box(s * 0.62, 0.84, -2.02, 0.06, 0.28, 0.14, 0x111214, 13); }
+  return p;
+}
+/* a wooden dhow (length along +z, bow at +z) */
+function mkDhow() {
+  const p = new Parts(13), g = new THREE.Group();
+  const sh = new THREE.Shape(); sh.moveTo(-13, 2.7); sh.lineTo(-11.6, 0.3); sh.quadraticCurveTo(0, -1.5, 11, 0.3); sh.lineTo(14.2, 3.5); sh.lineTo(-13, 3.1);
+  const hull = new THREE.ExtrudeGeometry(sh, { depth: 6.4, bevelEnabled: false }); hull.translate(0, 0, -3.2); hull.rotateY(-Math.PI / 2);
+  p.add(hull, new THREE.Matrix4(), 0x7a4e2a, 13);
+  p.box(0, 2.85, 0, 6.0, 0.2, 23, 0xa47a4a, 13);
+  p.box(0, 3.05, -9.6, 5.2, 2.3, 4.6, 0x8a5e36, 13);
+  for (const s of [-1, 1]) p.box(s * 3.05, 3.05, 0, 0.14, 0.7, 23, 0x6a4426, 13);
+  p.add(new THREE.CylinderGeometry(0.22, 0.32, 16, 8), new THREE.Matrix4().makeTranslation(0, 11, 2), 0x6a4426, 13);
+  p.beam(0, 7.2, 8.8, 0, 17.6, -4.6, 0.22, 0.22, 0x5a3a20, 13);
+  for (let k = 0; k < 4; k++) p.box(-1.4 + (k % 2) * 2.8, 3.05, 5 + Math.floor(k / 2) * 2.4, 1.3, 1.1, 1.3, 0x9a8a6a, 13);
+  const m = p.mesh(MAT_VEH); m.castShadow = true; g.add(m);
+  const sg = new THREE.BufferGeometry(); sg.setAttribute('position', new THREE.Float32BufferAttribute([0.05, 7.3, 8.6, 0.05, 17.4, -4.4, 0.05, 3.9, 1.6], 3)); sg.computeVertexNormals();
+  g.add(new THREE.Mesh(sg, new THREE.MeshLambertMaterial({ color: 0xe8dcc0, side: THREE.DoubleSide })));
+  return g;
+}
+/* cumulative distances of the interior corners of a polyline [[x, z]…] */
+const dxCorners = (pts) => { const out = []; let s = 0; for (let i = 1; i < pts.length; i++) { s += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); if (i < pts.length - 1) out.push(s); } return out; };
+
+/* ---------- 3: the supercar heist ---------- */
+const DXB_CARS = [
+  /* routes follow the real road grid (checked clear of buildings at these lane offsets); lats: [[from s, lane offset]…] */
+  { jp: 'ゴールドのハイパーカー', short: 'ゴールド', body: 0xc9a24a, trim: 0x1a1a1a, wing: true, v: 25, lats: [[0, 6.5]], route: [[150, 600], [150, 470], [640, 470], [640, 976], [930, 976], [930, 470], [1022, 470], [1046, 470]] },
+  { jp: '白いスーパーカー', short: 'ホワイト', body: 0xf1f1ec, trim: 0xc9a24a, v: 21, lats: [[0, 6.5], [150, 11.5]], route: [[150, 600], [150, 470], [1022, 470], [1046, 470]] },
+  { jp: '赤いスーパーカー', short: 'レッド', body: 0xc8202a, trim: 0x111111, wing: true, v: 23, lats: [[0, 6.5]], route: [[150, 600], [150, 290], [930, 290], [930, 470], [1022, 470], [1046, 470]] },
+  { jp: 'ライムのスーパーカー', short: 'ライム', body: 0x8fd13a, trim: 0x111111, v: 23, lats: [[0, 6.5]], route: [[150, 600], [150, 105], [-150, 105], [-150, 470], [1022, 470], [1046, 470]] }
+];
+MSN.dxb.push({
+  combat: true, title: 'スーパーカー強奪事件', goal: '強奪された4台のスーパーカーをウェブで止めて取り戻せ',
+  story: 'ダウンタウンで開かれたサウードのスーパーカー展示会を組織が襲撃！ 4台が強奪され、それぞれ別の道でドバイ・クリークに待つ密輸船へ向かっている。ウェブを当てて車を止め、取り戻せ。「頼む、傷だけはつけないでくれ！」',
+  keys: ['F：車にウェブ（3発で止まる）— 当てるたびに減速する', 'E の打撃でも止まるが、車にキズがつく（サウードが嘆く）', '4台は別々の道を通る。右上の「港まで」ゲージが少ない車から追え', '近づくと車線を変えて逃げる。ジップで先回りすると当てやすい', '2台逃げられたら失敗。3台以上取り戻せばクリア'],
+  limit: 270, timeout: '時間内に車を取り戻せなかった…',
+  start() {
+    const self = this;
+    this.cars = []; this.rec = 0; this.lost = 0; this.endT = 0; this.scratch = 0; this.goT = null;
+    trafficCloseRoute(DXB_CARS.map((c) => c.route.slice(0, -1)), 26);
+    TRAFFIC_BLOCK = { x: 152, z: 590, r: 40 };
+    DXB_CARS.forEach((C, k) => {
+      const path = mkPath(dxRoundRoute(C.route.map(([x, z], i) => [x, i === C.route.length - 1 ? 0.62 : 0.02, z]), 14), false);
+      const m = vkSuper(C).mesh(MAT_VEH); m.castShadow = true; MS.group.add(m);
+      const c = { C, k, path, m, s: 30 - k * 8.5, v: 0, vmax: C.v, lat: C.lats[0][1], latT: C.lats[0][1], hits: 0, st: 'wait', t: 0, yawOff: 0, pos: new V3(), corners: dxCorners(C.route), scr: false, globs: [] };
+      c.ent = msEnt({ pos: c.pos, r: 2.3, h: 1.3, hittable: true, webbable: true, prio: 3,
+        onWeb() { self.hitCar(c, false); }, onHit() { self.hitCar(c, true); } });
+      this.cars.push(c); this.placeCar(c);
+      /* the thief who jumps in during the opening scene */
+      const th = dxThug(), sx = -c.fz, sz = c.fx; th.root.position.set(c.pos.x + sx * 5 + c.fx * 3, groundAt(c.pos.x, c.pos.z, 3), c.pos.z + sz * 5 + c.fz * 3); MS.group.add(th.root);
+      c.boarder = { d: th, tx: c.pos.x + sx * 1.3, tz: c.pos.z + sz * 1.3 };
+    });
+    /* the smugglers' dhow at the end of Sheikh Zayed Road */
+    const dh = this.dhow = mkDhow(); dh.position.set(1056, WATER_Y - 0.9, 470); MS.group.add(dh);
+    const rp = new Parts(13); rp.beam(1018, 0.05, 470, 1051, 0.55, 470, 4.2, 0.18, 0x8a6a48, 13); MS.group.add(rp.mesh(MAT_VEH));
+    const S = this.saud = mkSaud(); S.root.position.set(166, groundAt(166, 596, 4), 596); MS.group.add(S.root);
+    P.pos.set(172, groundAt(172, 604, 4) + 0.05, 604); P.state = 'ground'; P.vel.set(0, 0, 0); CAM.yaw = Math.atan2(-(150 - 172), -(560 - 604)); CAM.pitch = 0.05;
+    /* opening scene: the thieves drive off, Saud gives chase on foot, can't keep up and asks the hero */
+    this.intro = { t: 0, cam: new V3(136, 3.6, 612), look: new V3(156, 1.0, 586), said: {} };
+    this.sp = new V3(159.5, S.root.position.y, 596); this.sv = 0;
+    MS.lockHero = true; msCine(true);
+    MS.camHook = () => { const I = this.intro; if (!I) return; camera.position.copy(I.cam); camera.lookAt(I.look); camDir.subVectors(I.look, I.cam).normalize(); };
+  },
+  end() { trafficOpenRoute(); TRAFFIC_BLOCK = null; msCine(false); },
+  interact() { if (this.intro) { this.skip(); return true; } return false; },
+  skip() { this.ff = true; while (this.intro) { this.introStep(1 / 30); this.step(1 / 30); } this.ff = false; },
+  say(k, t) { const I = this.intro; if (I.said[k]) return; I.said[k] = 1; if (!this.ff) msCineSay(t); },
+  introStep(dt) {
+    const I = this.intro, S = this.saud, t = (I.t += dt), sp = this.sp;
+    if (t < 1.0) { this.say('a', '展示会場に組織の男たちが乱入し、スーパーカーに飛び乗った！'); for (const c of this.cars) { const b = c.boarder.d.root, dx = c.boarder.tx - b.position.x, dz = c.boarder.tz - b.position.z, d = Math.hypot(dx, dz); if (d > 0.2) { b.position.x += dx / d * Math.min(d, 6 * dt); b.position.z += dz / d * Math.min(d, 6 * dt); } b.rotation.y = Math.atan2(dx, dz); dudeAnim(c.boarder.d, null, d > 0.2 ? 6 : 0, dt); } }
+    else if (!I.boarded) { I.boarded = true; for (const c of this.cars) c.boarder.d.root.visible = false; this.goT = 0; if (!this.ff) sfx('swish', 0.6); }
+    /* Saud: runs after them, then runs out of breath */
+    if (t > 1.5 && t < 6.3) { const want = t < 5.4 ? 6.8 : 0; this.sv += clamp(want - this.sv, -9 * dt, 8 * dt); sp.z -= this.sv * dt; S.root.rotation.y = Math.PI; }
+    S.root.position.set(sp.x, groundAt(sp.x, sp.z, sp.y + 2), sp.z);
+    if (t < 1.5) dudeAnim(S, 'wave', 0, dt);
+    else if (t < 6.3) dudeAnim(S, null, this.sv, dt);
+    else if (t < 8.4) { const hx = P.pos.x - sp.x, hz = P.pos.z - sp.z; S.root.rotation.y = Math.atan2(hx, hz); dudeAnim(S, t < 7.0 ? 'stun' : 'wave', 0, dt); }
+    else { S.root.rotation.y = Math.PI; dudeAnim(S, 'aim', 0, dt); }
+    if (t > 2.6) this.say('b', 'サウード「待てっ！ わたしの車だぞ！」');
+    if (t > 5.4) this.say('c', 'サウード「はぁ……はぁ……速すぎる……！」');
+    if (t > 6.6) this.say('d', 'サウード「そこのヒーロー！ 頼む、4台とも取り返してくれ！」');
+    if (t > 8.4) this.say('e', 'サウード「あっちだ！ クリークの港へ向かっている！」');
+    /* cameras: wide on the showroom → following Saud → the two of them */
+    if (t < 2.6) { I.cam.set(136, 3.6, 612); I.look.set(156, 1.0, 586); }
+    else if (t < 6.6) { I.cam.set(sp.x + 4.2, sp.y + 2.4, sp.z + 7.5); I.look.set(sp.x - 1.5, sp.y + 1.4, sp.z - 20); }
+    else {
+      if (!I.met) { I.met = true; P.pos.set(sp.x + 2.1, groundAt(sp.x + 2.1, sp.z + 1.6, sp.y + 2) + 0.05, sp.z + 1.6); P.vel.set(0, 0, 0); P.state = 'ground'; P.yawFace = Math.atan2(sp.x - P.pos.x, sp.z - P.pos.z); P.faceT = 0; }
+      I.cam.set(sp.x - 3.6, sp.y + 1.6, sp.z + 2.6); I.look.set(sp.x + 1.1, sp.y + 1.25, sp.z + 0.5);
+    }
+    if (t >= 10.2) {
+      this.intro = null; MS.camHook = null; MS.lockHero = false; msCine(false);
+      CAM.yaw = 0; CAM.pitch = 0.12; P.yawFace = Math.PI;
+      toast('4台のスーパーカーを止めろ！', 'ウェブを3発当てると止まる — 港に着かれる前に', 'big bad');
+    }
+  },
+  update(dt) {
+    if (this.intro) this.introStep(dt);
+    this.step(dt);
+  },
+  placeCar(c) {
+    const T = pathAt(c.path, c.s, c.lat); c.pos.set(T.x, T.y, T.z);
+    c.m.position.copy(c.pos); c.m.rotation.set(0, Math.atan2(T.fx, T.fz) + c.yawOff, 0); c.fx = T.fx; c.fz = T.fz;
+  },
+  hitCar(c, melee) {
+    if (c.st !== 'drive' && c.st !== 'wait') return;
+    c.hits++; c.vmax *= 0.8; c.v *= 0.82;
+    fxBurst('spark', _dq1.set(c.pos.x, c.pos.y + 0.9, c.pos.z), 10, 5, 0.3, 0xffffff, 2, 3);
+    if (!melee) {                                                             // a blob of web sticks to the body
+      const b = new THREE.Mesh(this.globGeo || (this.globGeo = new THREE.SphereGeometry(0.42, 10, 7)), this.globMat || (this.globMat = new THREE.MeshLambertMaterial({ color: 0xf2f4f6 })));
+      b.position.set((Math.random() - 0.5) * 1.6, 0.85 + Math.random() * 0.3, (Math.random() - 0.5) * 3); b.scale.set(1.3, 0.55, 1.1); c.m.add(b);
+    } else { this.scratch++; if (!c.scr) { c.scr = true; toast('「おい、傷をつけるな！」', 'サウードが嘆いている — できればウェブで止めよう', 'bad'); } }
+    if (c.hits >= 3) {
+      c.st = 'spin'; c.t = 0; c.ent.alive = false; sfx('land', 0.8);
+      toast(`${c.C.jp}を止めた！`, null, 'big ok');
+    } else toast(`${c.C.short}にヒット（あと ${3 - c.hits}）`, null, 'ok');
+  },
+  step(dt) {
+    const hc = hpos();
+    if (this.endT > 0) { this.endT -= dt; if (this.endT <= 0) this.finish(); }
+    if (this.goT !== null) this.goT += dt;
+    for (const c of this.cars) {
+      c.t += dt;
+      if (c.st === 'wait') { if (this.goT !== null && this.goT > c.k * 0.45) { c.st = 'drive'; c.dv = 0; } else { this.placeCar(c); continue; } }
+      if (c.st === 'drive') {
+        let vt = c.vmax;
+        for (const cs of c.corners) { const d = cs - c.s; if (d > -6 && d < 70) { vt = Math.min(vt, 10 + Math.max(0, d) * 0.42); break; } }
+        c.dv += dt; vt = Math.min(vt, 9 + c.dv * 6);
+        c.v += clamp(vt - c.v, -12 * dt, 6.5 * dt);
+        /* swerve across lanes when the hero closes in */
+        const dh = Math.hypot(hc.x - c.pos.x, hc.z - c.pos.z);
+        let base = c.C.lats[0][1]; for (const [s0, l] of c.C.lats) if (c.s >= s0) base = l;
+        const room = base > 9 ? 2.6 : 1.6;                                    // narrow city roads leave less room to swerve
+        c.latT = dh < 32 ? base + (Math.sin(c.t * 1.25 + c.k * 2) > 0 ? room : -room) : base;
+        c.lat += (c.latT - c.lat) * Math.min(1, dt * 1.6);
+        c.s += c.v * dt;
+        if (c.s >= c.path.len - 1.5) {
+          c.st = 'lost'; c.ent.alive = false; this.lost++; c.m.visible = false;
+          toast(`${c.C.jp}が密輸船に積み込まれた…`, this.lost >= 2 ? null : 'もう1台逃げられたら失敗', 'big bad');
+          if (this.lost >= 2) { setTimeout(() => { if (MS.cur === this) msFail('スーパーカーが2台も密輸船で運び出されてしまった…'); }, 900); }
+        }
+      } else if (c.st === 'spin') {
+        c.v = Math.max(0, c.v - 16 * dt); c.yawOff += dt * (c.v * 0.12 + 0.2) * (c.k % 2 ? 1 : -1); c.s += c.v * dt;
+        if (Math.random() < 0.5) fxEmit('smoke', c.pos.x, c.pos.y + 0.3, c.pos.z, (Math.random() - 0.5) * 2, 0.8, (Math.random() - 0.5) * 2, 1.2, 0xd8d2c8, -0.3, 1);
+        if (c.v <= 0.05) {
+          c.st = 'stop'; this.rec++;
+          const d = dxThug(); const sx = -c.fz, sz = c.fx; d.root.position.set(c.pos.x + sx * 1.9, groundAt(c.pos.x + sx * 1.9, c.pos.z + sz * 1.9, c.pos.y + 2), c.pos.z + sz * 1.9); d.root.rotation.y = Math.atan2(-sx, -sz); MS.group.add(d.root); c.thief = d;
+          toast(`${c.C.short}を取り戻した！（${this.rec}台目）`, '運転していた男は降参した', 'ok');
+        }
+      }
+      if (c.thief) dudeAnim(c.thief, 'kneel', 0, dt);
+      if (c.st !== 'lost') this.placeCar(c);
+    }
+    if (!this.endT && this.rec + this.lost === this.cars.length && this.lost < 2) this.endT = 1.6;
+    if (!this.intro && this.saud) dudeAnim(this.saud, 'aim', 0, dt);
+    MS.ents = MS.ents.filter((e) => e.alive);
+  },
+  finish() {
+    const n = this.rec, sc = this.scratch;
+    msWin(n === 4 ? (sc ? `4台すべて取り戻した！「……キズは見なかったことにしよう」とサウード。` : `4台すべて無傷で取り戻した！「完璧だ。君は最高のヒーローだ！」とサウード。`)
+      : `${n}台を取り戻した！「1台は惜しいが……よくやってくれた」とサウード。`);
+  },
+  obj() {
+    if (this.intro) return '強奪されたスーパーカーが走り去っていく…（E でスキップ）';
+    if (this.endT > 0) return 'スーパーカーを取り戻した！';
+    return `スーパーカーを止めろ（取り戻した ${this.rec}／逃げられた ${this.lost}）— 2台逃げられたら失敗`;
+  },
+  bars() { return this.cars.filter((c) => c.st === 'drive' || c.st === 'wait').map((c) => [`${c.C.short}　港まで`, 1 - c.s / c.path.len, 'var(--alarm)']); },
+  target() {
+    let best = null, bd = 1e9; const hc = hpos();
+    for (const c of this.cars) if (c.st === 'drive' || c.st === 'wait') { const d = c.pos.distanceTo(hc) - (c.path.len - c.s) * 0.3; if (d < bd) { bd = d; best = c; } }
+    return best ? _mv2.set(best.pos.x, best.pos.y + 2.4, best.pos.z) : null;
+  }
+});
+
+/* ---------- 4: Saud kidnapped by helicopter ---------- */
+const DXB_HELI_ROUTE = [[-500, -201], [-430, -110], [-300, 40], [-110, 230], [40, 420], [270, 560], [335, 760], [270, 960], [110, 1120], [-110, 1240], [-300, 1292]];
+MSN.dxb.push({
+  combat: true, title: 'サウード誘拐！ ヘリを追え', goal: '組織のヘリに取り付き、サウードを救い出せ',
+  story: 'ブルジュ・アル・アラブで開かれたサウードの慈善パーティーに組織が乱入。サウードを乗せたヘリがヘリパッドから飛び立った！ 行き先は砂漠のキャンプに偽装した組織のアジト。たどり着かれる前にヘリへ取り付き、サウードを救い出せ！',
+  keys: ['右クリック：ヘリへウェブジップ — ぶら下がれる（Space で手を離す）', 'ぶら下がったら E を連打してよじ登れ（10回）', 'ヘリは振り落としにかかる。それまでに半分以上登っていればしがみつける', 'ドアの男が撃ってくる。ビルの陰を伝って近づけ', '救出したら予備のパラシュートで降下 — 着地点を選べ（水の上はだめ）'],
+  limit: 300, timeout: 'ヘリを見失ってしまった…',
+  start() {
+    const pts = DXB_HELI_ROUTE.map(([x, z]) => new V3(x, 0, z));
+    this.curve = new THREE.CatmullRomCurve3(pts, false, 'centripetal'); this.len = this.curve.getLength();
+    const h = this.h = mkHeli({ body: 0x17181c, stripe: 0x7a1414, belly: 0x0c0c0e, jp: '組織のヘリ' }, false); MS.group.add(h.root);
+    this.u = 0.035; const p0 = this.curve.getPointAt(this.u);
+    this.pos = new V3(p0.x, 200, p0.z); this.vel = new V3(); this.yaw = 0; this.v = 14; this.roll = 0; this.st = 'fly'; this.t = 0;
+    this.climb = 0; this.shakeT = 6; this.warned = false; this.gunT = 3; this.burst = 0; this.kickT = 1.5; this.hung = false; this.c = new V3();
+    /* web anchors and hang boxes like the sky helicopters */
+    const S = this.S = dynSrc('heli', h.root, 11, '組織のヘリ'); S.heli = { vel: this.vel, fwd: new V3(0, 0, 1) };
+    for (const sx of [-1.22, 1.22]) for (const zz of [-1.2, 0.4, 1.9]) S.pts.push(new V3(sx, 0.08, zz));
+    dynBox(S, -1.2, 0.45, -3.35, 1.2, 3.0, 3.8, { hang: 1.22, hangY: 0.08, hz0: -1.4, hz1: 1.9 });
+    dynBox(S, -0.45, 1.8, -10.2, 0.45, 2.7, -3.35, { hang: 1.22, hangY: 0.08, hz0: -1.4, hz1: -1.0 });
+    dynBox(S, -1.35, -0.05, -1.8, 1.35, 0.45, 2.7, { hang: 1.22, hangY: 0.08, hz0: -1.4, hz1: 1.9 });
+    /* the door gunner sits on the right-hand door sill; Saud is tied up inside */
+    const g = this.gunner = dxThug(); g.root.position.set(1.05, 0.55, 0.6); g.root.rotation.y = Math.PI / 2; h.root.add(g.root);
+    const sd = this.saud = mkSaud(); sd.root.position.set(-0.35, 0.5, 0.9); sd.root.rotation.y = Math.PI / 2; h.root.add(sd.root);
+    P.pos.set(-405, groundAt(-405, 25, 6) + 0.05, 25); P.state = 'ground'; P.vel.set(0, 0, 0); CAM.yaw = Math.atan2(-(this.pos.x + 405), -(this.pos.z - 25)); CAM.pitch = 0.4;
+    toast('サウードがヘリで連れ去られた！', '砂漠のアジトに着く前にヘリへ取り付け', 'big bad');
+  },
+  end() {
+    DYNA = DYNA.filter((s) => s !== this.S);
+    if (P.anchorDyn && P.anchorDyn.src === this.S) { P.anchorDyn = null; P.hang = false; P.anchor = null; if (P.state === 'swing') P.state = 'air'; }
+    if (this.carry) this.drop(false);
+    hero.visible = true; MS.lockHero = false;
+  },
+  hanging() { return !!(P.hang && P.anchorDyn && P.anchorDyn.src === this.S); },
+  interact() {
+    if (this.st === 'fly' && this.hanging()) {
+      this.climb = Math.min(10, this.climb + 1); sfx('punch', 0.5); CAM.shake = Math.max(CAM.shake, 0.1);
+      if (this.climb >= 10) this.board();
+      return true;
+    }
+    return this.st === 'board';
+  },
+  board() {
+    this.st = 'board'; this.t = 0; MS.lockHero = true;
+    P.anchorDyn = null; P.hang = false; P.anchor = null; P.state = 'air'; P.vel.set(0, 0, 0);
+    toast('機内に突入！', null, 'big');
+  },
+  shakeOff() {
+    P.anchorDyn = null; P.hang = false; P.anchor = null; P.state = 'air';
+    const sx = Math.cos(this.yaw), sz = -Math.sin(this.yaw);
+    P.vel.set(this.vel.x * 0.5 + sx * 9, -1, this.vel.z * 0.5 + sz * 9); P.iframe = 0.6;
+    this.climb = Math.max(0, this.climb - 3);
+    toast('振り落とされた！', 'もう一度ジップで取り付け', 'big bad');
+  },
+  drop(safe) {
+    const sd = this.saud.root; HERO_PROP = null; if (sd.parent) sd.parent.remove(sd); MS.group.add(sd); sd.scale.setScalar(1);
+    const fx = Math.sin(P.yawFace || 0), fz = Math.cos(P.yawFace || 0);
+    sd.position.set(P.pos.x + fx * 1.3, P.pos.y, P.pos.z + fz * 1.3); sd.rotation.set(0, Math.atan2(-fx, -fz), 0);
+    this.carry = false;
+  },
+  /* altitude to fly at: well above the roofs, lower over the desert, down to the camp at the end */
+  alt(x, z, u) {
+    const g = Math.max(0, landY(x, z) === null ? 0 : groundAt(x, z, 600)), roofs = typeof skyHAt === 'function' ? skyHAt(x, z, 2) : g;
+    let a = Math.max(g + 62, roofs + 34);
+    if (u < 0.08) a = Math.max(a, 214 - u * 1200);
+    if (u > 0.93) a = g + 10 + (1 - u) / 0.07 * (a - g - 10);
+    return a;
+  },
+  update(dt) {
+    const h = this.h, hc = hpos(), d3 = this.pos.distanceTo(hc);
+    this.t += dt;
+    const hang = this.hanging();
+    if (hang && !this.hung) { this.hung = true; toast('ヘリに取り付いた！', 'E を連打してよじ登れ', 'big ok'); this.shakeT = Math.max(this.shakeT, 4.5); }
+    if (!hang) this.hung = false;
+    if (this.st === 'fly') {
+      /* rubber band: it runs when the hero is close and waits a little when he falls far behind */
+      const vt = hang ? 15 : d3 > 260 ? 10 : d3 > 150 ? 14 : d3 < 70 ? 21 : 18;
+      this.v += clamp(vt - this.v, -4 * dt, 3 * dt);
+      this.u = Math.min(1, this.u + this.v * dt / this.len);
+      const q = this.curve.getPointAt(this.u), ah = this.curve.getPointAt(Math.min(1, this.u + 0.004));
+      const ty = this.alt(q.x, q.z, this.u);
+      const nx = q.x, nz = q.z, ny = this.pos.y + clamp(ty - this.pos.y, -9 * dt, 12 * dt);
+      this.vel.set((nx - this.pos.x) / dt, (ny - this.pos.y) / dt, (nz - this.pos.z) / dt); this.pos.set(nx, ny, nz);
+      const wy = Math.atan2(ah.x - q.x, ah.z - q.z); let dy = Math.atan2(Math.sin(wy - this.yaw), Math.cos(wy - this.yaw)); this.yaw += dy * Math.min(1, dt * 2);
+      /* trying to shake off a hanger */
+      let rollT = clamp(-dy * 2, -0.35, 0.35);
+      if (hang) {
+        this.shakeT -= dt;
+        if (this.shakeT < 1.3 && !this.warned) { this.warned = true; toast('ヘリが振り落としにかかる！', this.climb >= 5 ? 'しがみつける — 登り続けろ' : '急いで登れ！（半分以上でしがみつける）', 'bad'); }
+        if (this.shakeT < 1.0) rollT = Math.sin(this.t * 9) * 0.55;
+        if (this.shakeT <= 0) { this.warned = false; this.shakeT = 6.5; if (this.climb < 5) this.shakeOff(); else { this.climb = Math.max(5, this.climb - 2); toast('しがみついた！', 'このまま登れ', 'ok'); } }
+        this.kickT -= dt; if (this.kickT <= 0) { this.kickT = 2.2; if (P.iframe <= 0) hurt(3, 'ドアの男の蹴り'); }
+      } else {
+        this.shakeT = Math.min(this.shakeT + dt, 6.5);
+        /* the door gunner: bursts at the hero when he is in range and in sight */
+        this.gunT -= dt;
+        if (this.gunT <= 0 && this.burst === 0 && d3 < 95) { const o = this.gunner.root.getWorldPosition(_dq1.set(0, 0, 0)); if (msLOS(o.clone(), hc.clone())) { this.burst = 6; this.bT = 0; hint('ドアの男が撃ってくる！', 0.8); } else this.gunT = 0.6; }
+        if (this.burst > 0) {
+          this.bT -= dt;
+          if (this.bT <= 0) {
+            this.bT = 0.11; this.burst--; if (!this.burst) this.gunT = 2.6;
+            const o = this.gunner.root.getWorldPosition(new V3()); o.y += 1.2;
+            const aim = _dq2.set(hc.x + P.vel.x * 0.15, hc.y, hc.z + P.vel.z * 0.15).sub(o).normalize();
+            aim.x += (Math.random() - 0.5) * 0.07; aim.y += (Math.random() - 0.5) * 0.05; aim.z += (Math.random() - 0.5) * 0.07; aim.normalize();
+            msShot({ p: o, v: aim.clone().multiplyScalar(90).add(this.vel), dmg: 4, r: 0.14, life: 1.4, reason: '組織の銃撃', mesh: new THREE.Mesh(this.trG || (this.trG = new THREE.CylinderGeometry(0.03, 0.03, 0.9, 5).rotateX(Math.PI / 2)), this.trM || (this.trM = new THREE.MeshBasicMaterial({ color: 0xffe08a }))), align: true, knock: 1.5 });
+            sfx('shot', 0.5);
+          }
+        }
+      }
+      this.roll += (rollT - this.roll) * Math.min(1, dt * 4);
+      if (this.u >= 1) { this.st = 'landed'; toast('ヘリがアジトに着陸してしまった…', null, 'big bad'); setTimeout(() => { if (MS.cur === this) msFail('サウードが砂漠のアジトに連れ込まれた…'); }, 900); }
+    } else if (this.st === 'board') {
+      /* the fight inside the cabin, then the jump with Saud */
+      this.u = Math.min(1, this.u + 12 * dt / this.len); const q = this.curve.getPointAt(this.u);
+      this.vel.set((q.x - this.pos.x) / dt, 0, (q.z - this.pos.z) / dt); this.pos.x = q.x; this.pos.z = q.z;
+      P.pos.set(this.pos.x, this.pos.y + 0.3, this.pos.z); P.vel.copy(this.vel);
+      const beats = [0.5, 0.95, 1.4];
+      for (const b of beats) if (this.t - dt < b && this.t >= b) { sfx('punch', 1); CAM.shake = 0.35; this.roll = (Math.random() - 0.5) * 0.4; }
+      if (this.t - dt < 1.6 && this.t >= 1.6) { this.gunner.root.visible = false; toast('組織の男たちを倒した！', null, 'ok'); }
+      if (this.t - dt < 2.2 && this.t >= 2.2) toast('操縦士がパラシュートで脱出した！', 'ヘリが墜落する — サウードを抱えて飛び降りろ！', 'big bad');
+      if (this.t >= 3.0) {
+        this.st = 'crash'; this.t = 0; MS.lockHero = false;
+        const sd = this.saud.root; sd.parent.remove(sd); heroProp(sd, 'torso'); sd.position.set(0, -0.62, -0.3); sd.rotation.set(0, 0, 0); sd.scale.setScalar(0.92); this.carry = true;
+        const sx = Math.cos(this.yaw), sz = -Math.sin(this.yaw);
+        P.pos.set(this.pos.x + sx * 3.2, this.pos.y - 1.5, this.pos.z + sz * 3.2); P.vel.set(this.vel.x * 0.4 + sx * 6, 2, this.vel.z * 0.4 + sz * 6); P.state = 'air'; P.iframe = 1;
+        DYNA = DYNA.filter((s) => s !== this.S);
+        const ch = this.chute = new THREE.Group(), cm = new THREE.MeshLambertMaterial({ color: 0xd8432a, side: THREE.DoubleSide });
+        const canopy = new THREE.Mesh(new THREE.SphereGeometry(3.4, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.42), cm); canopy.scale.set(1, 0.55, 0.8); ch.add(canopy);
+        for (let k = 0; k < 6; k++) { const a = (k / 6) * Math.PI * 2, x = Math.cos(a) * 2.4, z = Math.sin(a) * 1.8, ln = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 4.6, 4), new THREE.MeshBasicMaterial({ color: 0x222222 })); ln.position.set(x / 2, -0.4, z / 2); ln.lookAt(x, 1.6, z); ln.rotateX(Math.PI / 2); ch.add(ln); }
+        MS.group.add(ch);
+        toast('サウードを救出した！', '予備のパラシュートで降下 — 着地点を選べ（水の上はだめ）', 'big ok');
+      }
+    } else if (this.st === 'crash') {
+      /* pilotless: it yaws round and sinks, then hits the ground */
+      this.yaw += dt * 2.4; this.roll = Math.sin(this.t * 3) * 0.3;
+      this.vel.x *= Math.exp(-0.4 * dt); this.vel.z *= Math.exp(-0.4 * dt); this.vel.y = Math.max(-26, this.vel.y - 9 * dt);
+      this.pos.addScaledVector(this.vel, dt);
+      if (Math.random() < 0.8) fxEmit('smoke', this.pos.x, this.pos.y + 2, this.pos.z, 0, 2, 0, 2.2, 0x2a2826, -1, 0.7);
+      if (Math.random() < 0.4) fxEmit('fire', this.pos.x, this.pos.y + 1.5, this.pos.z, 0, 1.5, 0, 0.6, 0xff7a2a, -1, 1);
+      const ly = landY(this.pos.x, this.pos.z), gy = ly === null ? WATER_Y : groundAt(this.pos.x, this.pos.z, this.pos.y + 2);
+      if (this.pos.y <= gy + 0.5 || inCols(this.pos)) { this.st = 'wreck'; msBoom(this.pos.clone().setY(Math.max(gy, this.pos.y) + 1), 11, 30, 'ヘリの墜落'); h.root.visible = false; }
+    }
+    if (this.st === 'crash' || this.st === 'wreck') {
+      /* reserve parachute: slow, steerable descent while holding Saud */
+      if (this.chute) {
+        const on = this.carry && P.state === 'air';
+        this.chute.visible = on;
+        if (on) {
+          P.vel.y = Math.max(P.vel.y, -6.5); const hv = Math.hypot(P.vel.x, P.vel.z); if (hv > 12) { P.vel.x *= 12 / hv; P.vel.z *= 12 / hv; }
+          this.chute.position.set(P.pos.x, P.pos.y + 5.6, P.pos.z); this.chute.rotation.set(Math.sin(this.t * 1.3) * 0.06, 0, Math.sin(this.t * 1.1) * 0.06);
+        }
+      }
+      if (this.carry) {
+        if (P.state === 'water') { this.drop(false); toast('サウードを水に落としてしまった！', null, 'bad'); setTimeout(() => { if (MS.cur === this) msFail('サウードがずぶ濡れに……'); }, 700); }
+        else if (P.state === 'ground' || P.ride) { this.drop(true); this.done = true; dudeAnim(this.saud, 'wave', 0, dt); toast('無事に着地した！', '「命の恩人だ……！」', 'big ok'); setTimeout(() => { if (MS.cur === this) msWin('サウードを救い出した！「組織のアジトは警察に通報した。……ドバイの恩人よ、ありがとう」'); }, 2200); }
+      } else if (this.done) dudeAnim(this.saud, 'wave', 0, dt);
+      if (this.carry) dudeAnim(this.saud, 'carried', 0, dt);
+    } else {
+      dudeAnim(this.saud, 'kneel', 0, dt); dudeAnim(this.gunner, hang || this.burst ? 'punch' : 'kneel', 0, dt);
+    }
+    /* pose and rotor */
+    if (h.root.visible) {
+      h.root.position.copy(this.pos); h.root.rotation.set(this.st === 'fly' ? 0.1 : 0.05, this.yaw, this.roll, 'YXZ');
+      h.rotor.rotation.y += (this.st === 'crash' ? 12 : 23) * dt; if (h.trot) h.trot.rotation.x += 41 * dt;
+      h.root.updateMatrixWorld(true);
+      this.S.c.copy(this.pos); this.S.heli.fwd.set(Math.sin(this.yaw), 0, Math.cos(this.yaw));
+    }
+    this.c.set(this.pos.x, this.pos.y + 1.5, this.pos.z);
+  },
+  obj() {
+    if (this.st === 'board') return '機内で組織の男たちと格闘中！';
+    if (this.carry) return 'パラシュートで降下中 — WASD で着地点を選べ（水の上はだめ）';
+    if (this.st === 'crash' || this.st === 'wreck') return this.done ? '救出成功！' : '着地しろ';
+    if (this.hanging()) return `E 連打でよじ登れ（${this.climb}/10）${this.climb < 5 ? ' — 半分までは振り落とされる' : ''}`;
+    const d = Math.round(this.pos.distanceTo(hpos()));
+    return `ヘリに追いつきジップで取り付け（${d}m）— 砂漠に入ると足場がなくなる`;
+  },
+  bars() {
+    const b = [['アジトまで', 1 - this.u, 'var(--alarm)']];
+    if (this.st === 'fly' && (this.hanging() || this.climb > 0)) b.push(['よじ登り', this.climb / 10, 'var(--go)']);
+    return this.st === 'fly' || this.st === 'board' ? b : [];
+  },
+  prompt() { return this.st === 'fly' && this.hanging() ? 'E 連打：よじ登る' : null; },
+  target() { return this.st === 'fly' ? _mv2.copy(this.pos).setY(this.pos.y + 3) : null; }
+});
+/* ---------- opening scenes for every mission (Dubai 3 has its own hand-made one in ms_dxb.js) ----------
+   Each mission gets scene() → { live, shots }. See msIntroStart in ms_core.js for the shot format. */
+const _sc1 = new V3(), _sc2 = new V3(), _sc3 = new V3();
+const SC = {
+  find(stage, title) { const m = MSN[stage].find((q) => q.title === title); if (!m) console.warn('scene: no mission', title); return m || {}; },
+  /* the hero, seen from the front three-quarter, facing where the mission points him */
+  hero(say, d) {
+    return { d: d || 1.8, say,
+      cam: () => { const C = MS.intro, tx = -Math.sin(C.yaw0), tz = -Math.cos(C.yaw0); return _sc1.set(P.pos.x + tx * 3.3 - tz * 1.5, P.pos.y + 1.45, P.pos.z + tz * 3.3 + tx * 1.5); },
+      look: () => _sc2.set(P.pos.x, P.pos.y + 1.2, P.pos.z) };
+  },
+  /* behind the hero, looking over him at a target */
+  over(say, d, tgt) {
+    return { d, say,
+      cam: () => { const T = typeof tgt === 'function' ? tgt() : tgt, dx = T.x - P.pos.x, dz = T.z - P.pos.z, L = Math.hypot(dx, dz) || 1; return _sc1.set(P.pos.x - dx / L * 4.5 + dz / L * 1.2, P.pos.y + 2.3, P.pos.z - dz / L * 4.5 - dx / L * 1.2); },
+      look: () => { const T = typeof tgt === 'function' ? tgt() : tgt; return _sc2.copy(T); } };
+  },
+  /* circle a point (radius r, height h) sweeping angle a0 → a1, looking at it (raised by ly) */
+  orbit(c, r, h, a0, a1, ly) {
+    const C = () => (typeof c === 'function' ? c() : c);
+    return { cam: (u) => { const p = C(), a = a0 + (a1 - a0) * u; return _sc1.set(p.x + Math.cos(a) * r, p.y + h, p.z + Math.sin(a) * r); },
+      look: () => { const p = C(); return _sc2.set(p.x, p.y + (ly || 0), p.z); } };
+  },
+  ang(from, to) { return Math.atan2(to.z - from.z, to.x - from.x); }
+};
+
+/* ===== NEW YORK ===== */
+SC.find('nyc', 'ひったくり犯を捕まえろ').scene = function () {
+  const m = this, vp = m.vic.root.position.clone(), dx = m.pos.x - vp.x, dz = m.pos.z - vp.z, L = Math.hypot(dx, dz) || 1, ux = dx / L, uz = dz / L;
+  const fw = () => _sc3.set(Math.sin(m.yaw), 0, Math.cos(m.yaw));
+  return { live: true, shots: [
+    { d: 2.3, say: '女性「バッグを盗まれたー！ 誰か捕まえて！」', cam: [vp.x - ux * 2.8 - uz * 1.3, vp.y + 1.6, vp.z - uz * 2.8 + ux * 1.3], look: [vp.x + ux * 9, vp.y + 1.2, vp.z + uz * 9] },
+    { d: 2.6, say: 'ひったくり犯が、人混みをかき分けて逃げていく！', cam: () => { const f = fw(); return _sc1.set(m.pos.x - f.x * 7.5, m.pos.y + 3, m.pos.z - f.z * 7.5); }, look: () => { const f = fw(); return _sc2.set(m.pos.x + f.x * 6, m.pos.y + 1, m.pos.z + f.z * 6); } },
+    SC.hero('ウェブを当てて、ひったくり犯を捕まえろ！', 1.7)
+  ] };
+};
+SC.find('nyc', '銀行強盗のバンを破壊しろ').scene = function () {
+  const m = this, T0 = laneAt(m.lane, m.s, 0), v0 = m.pos.clone();
+  const lf = () => laneAt(m.lane, m.s, 0);
+  return { live: true, shots: [
+    { d: 2.2, say: 'ニュース「銀行強盗の一味が、バンで逃走中です！」', cam: [v0.x - T0.fz * 7.5 + T0.fx * 4, v0.y + 1.7, v0.z + T0.fx * 7.5 + T0.fz * 4], look: [v0.x, v0.y + 1.1, v0.z] },
+    { d: 2.5, say: '後部ドアから、グレネードを投げてくるぞ！', cam: () => { const T = lf(); return _sc1.set(m.pos.x - T.fx * 11, m.pos.y + 3.6, m.pos.z - T.fz * 11); }, look: () => { const T = lf(); return _sc2.set(m.pos.x + T.fx * 4, m.pos.y + 1, m.pos.z + T.fz * 4); } },
+    SC.hero('グレネードをウェブで打ち返して、バンを破壊しろ！', 1.7)
+  ] };
+};
+SC.find('nyc', '怪人トカゲ人間').scene = function () {
+  const m = this, h = m.lid.p.clone(), dx = P.pos.x - h.x, dz = P.pos.z - h.z, L = Math.hypot(dx, dz) || 1, ux = dx / L, uz = dz / L;
+  return { live: true, shots: [
+    { d: 1.5, say: '通りのマンホールのふたが、吹き飛んだ……！', cam: [h.x + ux * 5 - uz * 2, h.y + 1.0, h.z + uz * 5 + ux * 2], look: [h.x, h.y + 0.8, h.z] },
+    { d: 2.3, say: '下水道から、怪人トカゲ人間が現れた！', cam: () => { const ex = P.pos.x - m.pos.x, ez = P.pos.z - m.pos.z, E = Math.hypot(ex, ez) || 1; return _sc1.set(m.pos.x + ex / E * 7 + ez / E * 1.6, h.y + 0.9, m.pos.z + ez / E * 7 - ex / E * 1.6); }, look: () => _sc2.set(m.pos.x, m.pos.y + 2.6, m.pos.z) }
+  ] };
+};
+SC.find('nyc', '空中戦！コウモリ男登場！').scene = function () {
+  const m = this, a = SC.ang(m.pos, P.pos);
+  return { live: true, shots: [
+    Object.assign({ d: 2.8, say: '摩天楼の屋上に、不気味な影……' }, SC.orbit(m.pos.clone(), 7.5, 2.2, a + 0.9, a + 0.25, 1.6)),
+    SC.over('コウモリ男だ！ 空中戦で捕獲しろ！', 2.4, () => m._c)
+  ] };
+};
+
+/* ===== HONG KONG ===== */
+SC.find('hk', '花火を打ち上げろ').scene = function () {
+  const m = this, F = m.ferry ? new V3(m.ferry.x, WATER_Y, m.ferry.z) : new V3(-77, WATER_Y, -12), c = m.cpos, a = SC.ang(c, P.pos);
+  return { live: false, shots: [
+    { d: 2.8, say: '今夜は、ヴィクトリア・ハーバーの花火大会。', cam: { a: [F.x + 75, 42, F.z - 70], b: [F.x + 48, 26, F.z - 40] }, look: [F.x, 3, F.z] },
+    Object.assign({ d: 2.6, say: 'ところが、打ち上げの火種が届いていない！ ピークの聖火台の火を使おう。' }, SC.orbit(c, 6.5, 2.6, a + 0.8, a + 0.1, 2.6)),
+    SC.hero('火を消さないように、スターフェリーの花火まで運べ！', 1.9)
+  ] };
+};
+SC.find('hk', 'アクションスターと記念撮影').scene = function () {
+  const m = this, lines = ['尖沙咀のフェリー乗り場に、カンフースターの銅像。', '観覧車の前には、鶴の構えの像。', 'そして青馬大橋のてっぺんに、武術の達人像。'];
+  const shots = m.S.map((S, i) => { const a = Math.atan2(Math.cos(S.yaw), Math.sin(S.yaw)); return Object.assign({ d: 2.2, say: lines[i] }, SC.orbit(S.p.clone(), 5.2, 2.0, a - 0.45, a + 0.35, 1.9)); });
+  shots.push(SC.hero('3体の前で E を押して、記念撮影しよう！', 1.8));
+  return { live: false, shots };
+};
+SC.find('hk', 'あなたもアクション俳優！').scene = function () {
+  const C = this.C;
+  return { live: false, shots: [                                   // the gang arrives after the scene, not while the hero is held
+    { d: 2.8, say: '観覧車前の広場に、マフィアが乗り込んでくるという……', cam: { a: [C.x + 22, C.y + 34, C.z + 46], b: [C.x + 8, C.y + 11, C.z + 24] }, look: [C.x, C.y + 2, C.z - 12] },
+    SC.hero('映画の撮影じゃない、本物の大乱闘だ！ 来るぞ、全員倒せ！', 2.0)
+  ] };
+};
+SC.find('hk', '狂犬！狼男！').scene = function () {
+  const m = this, w = m.pos.clone();
+  return { live: false, shots: [                                   // frozen: the wolf only starts its entrance once the hero can move
+    { d: 1.8, say: '満月の夜……', cam: [w.x + 1.5, w.y + 1.0, w.z + 5.5], look: [w.x, w.y + 2.6, w.z] },
+    { d: 1.8, say: '鎖鎌を操る狼男が現れた！ 倒して捕獲しろ！', cam: [w.x - 3.6, w.y + 1.6, w.z + 4.2], look: () => m._c }
+  ] };
+};
+
+/* ===== TOKYO ===== */
+SC.find('tk', '案内なら任せて！').scene = function () {
+  const p = this.pos;
+  return { live: false, shots: [
+    { d: 2.6, say: '渋谷、スクランブル交差点。', cam: { a: [p.x + 30, p.y + 26, p.z + 30], b: [p.x + 13, p.y + 9, p.z + 13] }, look: [p.x, p.y + 1, p.z] },
+    { d: 2.3, say: '旅行者「Excuse me…… トウキョウ・ステーション、ドコデスカ？」', cam: [p.x + 2.0, p.y + 3.4, p.z + 2.4], look: [p.x, p.y + 1.2, p.z] },
+    SC.hero('迷子の旅行者を、東京駅まで送り届けよう！', 1.7)
+  ] };
+};
+SC.find('tk', '巨大怪獣、東京へ！').scene = function () {
+  const k = this.path[0], c = TK_CANNONS[0];
+  return { live: true, shots: [
+    { d: 3.2, say: '東京湾に、巨大な影が……', cam: { a: [k.x + 330, 38, k.z + 230], b: [k.x + 300, 55, k.z + 210] }, look: [k.x, 80, k.z] },
+    { d: 2.6, say: '甲羅怪獣ゲンブが、東京に上陸しようとしている！', cam: [k.x + 190, 10, k.z + 120], look: [k.x, 135, k.z] },
+    { d: 2.0, say: '都庁屋上の大砲で迎え撃て！', cam: [c.x + 9, c.y + 5, c.z + 9], look: [c.x, c.y + 2.5, c.z] }
+  ] };
+};
+SC.find('tk', '大地震！ スカイツリーを支えろ').scene = function () {
+  const S = TK_SKY, x = S.cx, z = S.cz, a = Math.atan2(P.pos.z - z, P.pos.x - x);
+  return { live: false, shots: [
+    { d: 2.6, say: '大地震発生！ スカイツリーが傾き始めた！', cam: [x + Math.cos(a) * 75, 6, z + Math.sin(a) * 75], look: { a: [x, 110, z], b: [x, 330, z] } },
+    Object.assign({ d: 2.4, say: '光る4か所を、ウェブで近くのビルとつなげ！' }, SC.orbit(new V3(x, 210, z), 170, 30, a - 0.5, a + 0.1, 0)),
+    SC.hero('倒れる前に、スカイツリーを支えろ！', 1.6)
+  ] };
+};
+SC.find('tk', '富士山大爆発！！').scene = function () {
+  const F = FUJI_TOP;
+  return { live: true, shots: [
+    SC.over('……富士山が、大噴火した！', 3.0, new V3(F.x, F.y + 60, F.z)),
+    SC.hero('噴石が街に降ってくる！ ウェブを当てて街を守れ！', 2.4)
+  ] };
+};
+
+/* ===== DUBAI (mission 3 has its own scene) ===== */
+SC.find('dxb', '大富豪の護衛を務めろ！').scene = function () {
+  const m = this, l = m.pos.clone();
+  return { live: false, shots: [
+    { d: 2.6, say: '世界一の高さを誇る、ブルジュ・ハリファ。', cam: [218, 3, 622], look: { a: [160, 30, 680], b: [160, 430, 680] } },
+    { d: 2.6, say: 'ドバイの大富豪サウードが、ブルジュ・アル・アラブへ向かう。', cam: [l.x + 4.8, l.y + 1.6, l.z - 5.6], look: [l.x + 1.2, l.y + 1.0, l.z + 1.2] },
+    SC.hero('サウードを狙う組織が動いている——リムジンを護衛しろ！', 2.0)
+  ] };
+};
+SC.find('dxb', '戦闘用ロボの暴走！').scene = function () {
+  const m = this, p = m.pos.clone(), fx = Math.sin(m.yaw), fz = Math.cos(m.yaw);
+  return { live: true, shots: [
+    { d: 2.2, say: 'サウードが投資した軍用ロボ「サイフ03」の公開デモンストレーション。', cam: [p.x + fx * 13 + fz * 3, p.y + 1.8, p.z + fz * 13 - fx * 3], look: [p.x, p.y + 7, p.z] },
+    { d: 2.6, say: '……制御不能！ ロボが街を破壊し始めた！', cam: [p.x + fx * 30 + fz * 16, p.y + 9, p.z + fz * 30 - fx * 16], look: [p.x, p.y + 6, p.z] }
+  ] };
+};
+SC.find('dxb', 'サウード誘拐！ ヘリを追え').scene = function () {
+  const m = this;
+  return { live: true, shots: [
+    { d: 2.6, say: '慈善パーティーに組織が乱入！ サウードがヘリで連れ去られた！', cam: { a: [-468, 206, -150], b: [-458, 210, -138] }, look: () => m.pos },
+    { d: 2.2, say: '行き先は、砂漠のアジト……', cam: () => _sc1.set(m.pos.x - Math.sin(m.yaw) * 20, m.pos.y + 5, m.pos.z - Math.cos(m.yaw) * 20), look: () => m.pos },
+    SC.hero('たどり着かれる前に、ヘリへ取り付け！', 1.6)
+  ] };
+};
 /* =====================================================================
    PEDESTRIANS — sidewalk crowds on every block (GPU-animated instances),
    and passers-by who fight back when the hero hits them
@@ -13481,7 +14077,7 @@ function startGame(noLock) {
   P.restored = false;
   const [a, b] = STAGE.intro;
   toast(a[0], a[1], 'ok');
-  setTimeout(() => toast(b[0], b[1]), 2600);
+  setTimeout(() => { if (GAME.started) toast(b[0], b[1]); }, 2600);
 }
 function pause() {
   if (!GAME.started || GAME.paused) return;
