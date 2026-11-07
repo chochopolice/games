@@ -12307,20 +12307,22 @@ MSN.dxb.push({
       let T = null;
       for (let k = 0; k < 6 && !T; k++) { const q = pathAt(this.path, ss - k * 6, side * (6.5 - k * 0.6)); if (landY(q.x, q.z) !== null && !inCols(_dq1.set(q.x, 1, q.z))) T = q; }
       if (!T) T = pathAt(this.path, ss, side * 3);
-      const t = { d, grp, pos: new V3(T.x, 0, T.z), hp: 3, st: grp ? 'hold' : 'wait', stun: 0, yaw: Math.atan2(-T.fx, -T.fz), cd: 0 };
+      const t = { d, grp, side, slot: [2.2, -0.2, -2.6][Math.floor(i / 2)], pos: new V3(T.x, 0, T.z), hp: 3, st: grp ? 'hold' : 'wait', stun: 0, yaw: Math.atan2(-T.fx, -T.fz), cd: 0 };
       t.pos.y = groundAt(t.pos.x, t.pos.z, 6); d.root.visible = !grp;
-      t.ent = msEnt({ pos: t.pos, r: 0.5, h: 1.85, hittable: true, webbable: true, prio: 2,
+      t.mark = new THREE.Mesh(this.markGeo || (this.markGeo = new THREE.ConeGeometry(0.22, 0.45, 4).rotateX(Math.PI)), this.markMat || (this.markMat = new THREE.MeshBasicMaterial({ color: 0xff3a24 })));
+      t.mark.position.y = 2.55; d.root.add(t.mark);
+      t.ent = msEnt({ pos: t.pos, r: 0.5, h: 1.85, hittable: !grp, webbable: !grp, prio: 2,
         onWeb() { self.hitThug(t, 1, true); }, onHit(dmg, dir, kind) { self.hitThug(t, { 'パンチ': 1, 'キック': 1.5, '回し蹴り': 3 }[kind] || 1, false, dir); } });
       this.thugs.push(t);
     }
-    this.blockS = sEnd - 245; this.g2T = -1;
+    this.blockS = sEnd - 245; this.g2T = null; this.van = null;
     toast('待ち伏せだ！', '前方の男たちがリムジンを狙っている — 全員倒せ', 'big bad');
   },
   hitThug(t, d, web, dir) {
     if (t.st === 'ko') return;
     t.hp -= d; t.st = 'stun'; t.stun = web ? 1.6 : 0.6; t.d.coc.visible = !!web;
     if (dir) { t.pos.x += dir.x * 1.2; t.pos.z += dir.z * 1.2; }
-    if (t.hp <= 0) { t.st = 'ko'; t.ent.alive = false; t.d.coc.visible = false; toast('男を倒した！', null, 'ok'); }
+    if (t.hp <= 0) { t.st = 'ko'; t.ent.alive = false; t.d.coc.visible = false; t.mark.visible = false; toast('男を倒した！', null, 'ok'); }
   },
   /* ---------- per frame ---------- */
   update(dt) {
@@ -12414,26 +12416,53 @@ MSN.dxb.push({
       H.hook.position.set(H.pos.x, H.pos.y + 0.4 - H.L, H.pos.z); H.hook.visible = H.L > 0.3;
     }
     /* the ambush on foot */
-    if (this.g2T > 0) this.g2T -= dt;
+    if (this.g2T !== null) this.g2T -= dt;
+    if (!this.van && this.g2T !== null && this.thugs.some((t) => t.st === 'hold') && (this.g2T <= 0 || !this.thugs.some((u) => u.grp === 0 && u.st !== 'ko'))) {
+      /* reinforcements arrive in a black SUV from ahead and pull up just in front of the limo */
+      const m = vkBlackSuv().mesh(MAT_VEH); m.castShadow = true; MS.group.add(m);
+      this.van = { m, s: this.s + 110, stop: this.s + 15, v: 16, lat: 4.2, done: false };
+      toast('増援の黒いSUVが来る！', '前方から仲間を乗せたSUVが接近中', 'bad'); sfx('boom', 0.15);
+    }
+    if (this.van) {
+      const V = this.van; V.v = V.done ? 0 : Math.max(2, Math.min(16, (V.s - V.stop) * 0.9)); V.s -= V.v * dt;
+      if (!V.done && V.s <= V.stop + 0.3) {
+        V.done = true; let k = 0;
+        for (const t of this.thugs) if (t.st === 'hold') {
+          const T = pathAt(this.path, V.s - 1.6 + (k % 3) * 1.6, V.lat + (k % 2 ? 1.9 : -1.9)); k++;
+          t.pos.set(T.x, groundAt(T.x, T.z, 3), T.z); t.st = 'run'; t.d.root.visible = true; t.ent.hittable = t.ent.webbable = true;
+        }
+        toast('SUVから3人降りてきた！', 'リムジンに近づけるな', 'big bad');
+      }
+      const T = pathAt(this.path, V.s, V.lat); V.m.position.set(T.x, T.y, T.z); V.m.rotation.set(0, Math.atan2(-T.fx, -T.fz), 0);
+    }
+    const lfx = this.fx, lfz = this.fz;
     for (const t of this.thugs) {
       const p = t.pos, d = t.d; let mode = null, spd = 0;
       if (t.st === 'ko') { mode = 'ko'; }
       else if (t.st === 'stun') { mode = 'stun'; t.stun -= dt; if (t.stun <= 0) { t.st = 'run'; d.coc.visible = false; } }
       else {
-        if (t.st === 'wait' && this.s > this.blockS - 60) { t.st = 'run'; if (this.g2T < 0) this.g2T = 10; }
-        if (t.st === 'hold' && this.g2T >= 0 && (this.g2T <= 0 || !this.thugs.some((u) => u.grp === 0 && u.st !== 'ko'))) {
-          t.st = 'run'; d.root.visible = true; if (!this.g2Told) { this.g2Told = true; toast('建物から仲間が出てきた！', 'あと3人 — リムジンに近づけるな', 'bad'); }
-        }
+        if (t.st === 'wait' && this.s > this.blockS - 60) { t.st = 'run'; if (this.g2T === null) this.g2T = 12; }
         if (t.st !== 'wait' && t.st !== 'hold') {
-          const toH = Math.hypot(hc.x - p.x, hc.z - p.z);
-          const goal = toH < 3.2 && Math.abs(hc.y - p.y) < 2 ? hc : this.pos;
-          const dx = goal.x - p.x, dz = goal.z - p.z, dd = Math.hypot(dx, dz) || 1;
-          t.yaw = Math.atan2(dx, dz);
-          if (goal === hc) { mode = 'punch'; t.cd -= dt; if (t.cd <= 0) { t.cd = 1.2; if (P.iframe <= 0) { hurt(5, '待ち伏せの男のパンチ'); heroKnock(_dq2.set(dx, 0, dz).normalize(), 6, 3); } } }
-          else if (dd > 3.0) { spd = 4.2; p.x += (dx / dd) * spd * dt; p.z += (dz / dd) * spd * dt; p.y = groundAt(p.x, p.z, p.y + 1.5); }
-          else { mode = 'strike'; this.kid = Math.min(100, this.kid + 3 * dt); }
+          /* each man heads for his own door of the limo, never into the car */
+          let gx = this.pos.x + lfx * t.slot - lfz * t.side * 1.95, gz = this.pos.z + lfz * t.slot + lfx * t.side * 1.95;
+          const ox = p.x - this.pos.x, oz = p.z - this.pos.z, ou = ox * lfx + oz * lfz, ov = -ox * lfz + oz * lfx;
+          let route = false;
+          if (Math.sign(ov) !== t.side && Math.abs(ov) < 3.5 && Math.abs(ou) < 6.5) {      // on the wrong side: walk round the nearer end of the car
+            const sg = ou >= t.slot ? 1 : -1, eu = sg * 5.6, ev = Math.abs(ou) < 4.9 ? ov : t.side * 2.2; route = true;
+            gx = this.pos.x + lfx * eu - lfz * ev; gz = this.pos.z + lfz * eu + lfx * ev;
+          }
+          const toH = Math.hypot(hc.x - p.x, hc.z - p.z), fight = toH < 3.2 && Math.abs(hc.y - p.y) < 2;
+          const dx = (fight ? hc.x : gx) - p.x, dz = (fight ? hc.z : gz) - p.z, dd = Math.hypot(dx, dz) || 1;
+          if (fight) { t.yaw = Math.atan2(dx, dz); mode = 'punch'; t.cd -= dt; if (t.cd <= 0) { t.cd = 1.2; if (P.iframe <= 0) { hurt(5, '待ち伏せの男のパンチ'); heroKnock(_dq2.set(dx, 0, dz).normalize(), 6, 3); } } }
+          else if (dd > 0.6 || route) { t.yaw = Math.atan2(dx, dz); spd = Math.min(4.2, dd * 4); p.x += (dx / dd) * spd * dt; p.z += (dz / dd) * spd * dt; p.y = groundAt(p.x, p.z, p.y + 1.5); }
+          else { t.yaw = Math.atan2(lfz * t.side, -lfx * t.side); mode = 'strike'; this.kid = Math.min(100, this.kid + 3 * dt); }
         }
       }
+      if (t.st !== 'hold') {
+        const dx = p.x - this.pos.x, dz = p.z - this.pos.z, u = dx * lfx + dz * lfz, v = -dx * lfz + dz * lfx;
+        if (Math.abs(u) < 4.7 && Math.abs(v) < 1.6) { const nv = (v === 0 ? t.side : Math.sign(v)) * 1.6; p.x = this.pos.x + lfx * u - lfz * nv; p.z = this.pos.z + lfz * u + lfx * nv; }
+      }
+      t.mark.visible = t.st !== 'ko'; t.mark.rotation.y += dt * 3; t.mark.position.y = 2.55 + Math.sin(CLOCK * 4 + t.slot) * 0.08;
       d.root.position.copy(p); d.root.rotation.y = t.yaw; dudeAnim(d, mode, spd, dt);
     }
     /* a blocking SUV lets its crew pry the limo's doors open */
@@ -12447,7 +12476,8 @@ MSN.dxb.push({
   obj() {
     if (this.endT > 0) return '到着！';
     if (this.heli && this.heli.st !== 'flee') return this.heli.st === 'grab' ? 'リムジンが掴まれている！ ヘリにウェブを当てろ！' : '組織のヘリにウェブを当てて追い払え';
-    if (this.thugs.some((t) => t.st !== 'ko')) return '待ち伏せの男たちを全員倒せ（リムジンに近づけるな）';
+    if (this.van && !this.van.done) return '増援のSUVが来る — 降りてくる男たちに備えろ';
+    if (this.thugs.some((t) => t.st !== 'ko')) return '赤い印の男たちを全員倒せ（リムジンのドアに近づけるな）';
     if (this.suvs.some((e) => e.st === 'block')) return 'リムジンの前に割り込んだSUVを潰せ！ 放っておくと誘拐される';
     if (this.suvs.some((e) => e.st !== 'wreck')) return '黒いSUVにウェブ（F）を当てて止めろ';
     return this.lost > 0 ? 'リムジンに戻れ！ 離れすぎている' : 'リムジンを護衛してブルジュ・アル・アラブへ';
